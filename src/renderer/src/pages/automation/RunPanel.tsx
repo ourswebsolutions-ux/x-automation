@@ -22,7 +22,12 @@ const RUN_STATUS = RUN_LABEL
 
 /** What an item looks like to the user (its publishing state comes from the queue). */
 function itemState(i: RunItem): { label: string; tone: Tone } {
-  if (i.kind === 'engagement') return { label: i.text?.startsWith('Repost') ? 'Repost task for you' : 'Task for you', tone: 'neutral' }
+  if (i.kind === 'engagement') {
+    const what = i.text?.startsWith('Repost') ? 'Repost' : i.text?.startsWith('Comment') ? 'Comment' : 'Task'
+    if (i.engagementStatus === 'done') return { label: `${what} done`, tone: 'success' }
+    if (i.engagementStatus === 'skipped') return { label: `${what} skipped`, tone: 'neutral' }
+    return { label: `${what} task for you`, tone: 'neutral' }
+  }
   switch (i.status) {
     case 'pending':
       return { label: 'Waiting', tone: 'neutral' }

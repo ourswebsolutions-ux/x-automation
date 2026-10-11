@@ -1103,6 +1103,7 @@ export class RunService {
         accountLabel: (r.account_label as string) ?? null,
         draftId: (r.draft_id as string) ?? null,
         fromDraft: Boolean(r.source_draft_id),
+        engagementStatus: r.kind === 'engagement' ? ((r.engagement_status as RunItem['engagementStatus']) ?? null) : null,
         text: r.kind === 'engagement' ? `${r.engagement_kind === 'reply' ? 'Comment on' : r.engagement_kind === 'repost' ? 'Repost' : 'Like'} ${String(r.engagement_url ?? '')}` : ((r.draft_body as string) ?? null),
         imageAssetId: (r.asset_id as string) ?? null,
         image: r.image as RunItem['image'],

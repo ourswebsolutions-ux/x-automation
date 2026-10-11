@@ -97,6 +97,17 @@ export class EngagementRepository {
       .map((r) => r.account_id)
   }
 
+  /** Accounts that already have (or did) a reply with this exact text on this post. */
+  accountsWithReply(linkId: Id, replyText: string, excludeId: Id | null = null): string[] {
+    return this.db
+      .all<{ account_id: string }>(
+        `SELECT DISTINCT account_id FROM engagement_tasks WHERE link_id = :linkId AND kind = 'reply' AND status IN ('open', 'done')
+         AND lower(trim(reply_text)) = lower(trim(:replyText)) AND account_id IS NOT NULL AND id != :excludeId`,
+        { linkId, replyText, excludeId: excludeId ?? '' }
+      )
+      .map((r) => r.account_id)
+  }
+
   /** Tasks planned for an account on the local day containing `dayStart`..`dayEnd` (due or created then). */
   countForDay(accountId: Id, dayStart: string, dayEnd: string, excludeId: Id | null = null): number {
     return (

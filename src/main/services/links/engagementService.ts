@@ -63,7 +63,8 @@ const NEEDS_ACCOUNT: readonly EngagementKind[] = ['reply', 'like', 'repost', 'qu
  *  - a post from one of your accounts can't be liked/reposted/quoted from your
  *    other accounts (artificial amplification);
  *  - only one of your accounts may like/repost/quote a given post
- *    (coordinated engagement);
+ *    (coordinated engagement), and the same comment can't come from several
+ *    of your accounts on one post;
  *  - a configurable number of tasks per account per day;
  *  - no duplicate open task for the same post, account and kind.
  */
@@ -127,6 +128,16 @@ export class EngagementService {
       if (others.length) {
         const names = others.map((id) => this.deps.accounts.get(id)?.label ?? 'Another account').join(', ')
         add('coordinated', `${names} already has a like, repost or quote planned for this post. Using several of your accounts to amplify the same post is coordinated activity X’s rules don’t allow.`)
+      }
+    }
+
+    if (account && input.kind === 'reply' && input.replyText.trim()) {
+      const withSame = this.deps.repo.accountsWithReply(input.linkId, input.replyText, excludeId)
+      if (withSame.includes(account.id)) add('duplicate', `${account.label} already has this same comment on this post.`)
+      const others = withSame.filter((id) => id !== account.id)
+      if (others.length) {
+        const names = others.map((id) => this.deps.accounts.get(id)?.label ?? 'Another account').join(', ')
+        add('coordinated', `${names} already has this same comment planned for this post. The same comment from several of your accounts is coordinated activity X’s rules don’t allow.`)
       }
     }
 

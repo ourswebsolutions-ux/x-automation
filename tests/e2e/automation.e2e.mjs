@@ -426,7 +426,7 @@ await page.locator('section[aria-label="Action"] [role="radio"]:has-text("Repost
 await page.locator('section[aria-label="Profiles"] [role="radio"]:has-text("All profiles")').click()
 await page.locator('section[aria-label="Run time"] [role="radio"]:has-text("Now")').click()
 check('repost: the post-link library is offered instead of saved posts', await waitFor(async () => (await page.locator('ul[aria-label="Post links"]').count()) === 1, 5000) && (await page.locator('ul[aria-label="Your drafts"]').count()) === 0)
-await page.locator('[aria-label="Repost https://x.com/someone_else/status/1999000000000000001"]').click()
+await page.locator('[aria-label="Choose https://x.com/someone_else/status/1999000000000000001"]').click()
 check('repost: start panel shows 1 repost task', await waitFor(async () => (await summary(page).innerText()).includes('1 repost task'), 8000), (await summary(page).innerText()).replace(/\n/g, ' | '))
 await snap('12-repost-campaign')
 await page.locator('aside[aria-label="Start"] button:has-text("Start campaign")').click()
@@ -435,6 +435,31 @@ const run11 = await waitFor(async () => (await page.evaluate(() => window.relay.
 check('repost: campaign Completed with a repost task for one profile', run11 !== null && (await waitFor(async () => (await details(run11.id)).run.status === 'completed', 15000)) && (await runPanel().getByText('Repost task for you').isVisible()), run11 && (await details(run11.id)).run.status)
 const newEng11 = (await page.evaluate(() => window.relay.engagement.list({ status: 'all' }))).filter((e) => !engBefore11.some((b) => b.id === e.id))
 check('repost: one open repost task (one of your accounts per post), nothing posted, no profile opened by the app', newEng11.length === 1 && newEng11[0].kind === 'repost' && newEng11[0].status === 'open' && (await fxPosts()).length === postsBefore11 && ix.state.log.filter((l) => l.url === '/api/v2/profile-open').length === opensBefore11, JSON.stringify(newEng11.map((e) => [e.kind, e.status])))
+
+// ── 11b. Comment campaign: your own comment, one account per post, result recorded per operation ──
+await page.evaluate(() => window.relay.links.add({ text: 'https://x.com/another_author/status/1999000000000000002', accountId: null, tags: [], notes: '' })).catch(() => null)
+const engBefore11b = await page.evaluate(() => window.relay.engagement.list({ status: 'all' }))
+const postsBefore11b = (await fxPosts()).length
+await go('#/dashboard')
+await go('#/campaigns')
+await page.waitForSelector('#camp-name')
+await page.locator('#camp-name').fill('Comment campaign')
+await page.locator('section[aria-label="Action"] [role="radio"]:has-text("Comment")').click()
+check('comment: totals of available post links shown', await waitFor(async () => /\d+ post links? available/.test(await page.locator('section[aria-label="Posts to comment on"]').innerText()), 5000))
+await page.locator('[aria-label="Choose https://x.com/another_author/status/1999000000000000002"]').click()
+check('comment: Start blocked until you write the comment', await waitFor(async () => (await summary(page).innerText()).includes('comment text'), 8000) && (await page.locator('aside[aria-label="Start"] button:has-text("Start campaign")').isDisabled()))
+await page.locator('#camp-comment').fill('Thanks for sharing the benchmark numbers — very useful.')
+check('comment: start panel shows 1 comment task', await waitFor(async () => (await summary(page).innerText()).includes('1 comment task'), 8000), (await summary(page).innerText()).replace(/\n/g, ' | '))
+await snap('13-comment-campaign')
+await page.locator('aside[aria-label="Start"] button:has-text("Start campaign")').click()
+const run11b = await waitFor(async () => (await page.evaluate(() => window.relay.runs.list()))[0]?.name === 'Comment campaign', 10000) ? (await page.evaluate(() => window.relay.runs.list()))[0] : null
+check('comment: campaign Completed with a comment task for one profile', run11b !== null && (await waitFor(async () => (await details(run11b.id)).run.status === 'completed', 15000)) && (await runPanel().getByText('Comment task for you').isVisible()))
+const newEng11b = (await page.evaluate(() => window.relay.engagement.list({ status: 'all' }))).filter((e) => !engBefore11b.some((b) => b.id === e.id))
+check('comment: one reply task with your text; nothing posted automatically', newEng11b.length === 1 && newEng11b[0].kind === 'reply' && newEng11b[0].replyText === 'Thanks for sharing the benchmark numbers — very useful.' && (await fxPosts()).length === postsBefore11b, JSON.stringify(newEng11b.map((e) => [e.kind, e.replyText])))
+await page.evaluate((id) => window.relay.engagement.setStatus([id], 'done'), newEng11b[0].id)
+await go('#/dashboard')
+await go(`#/campaigns?run=${run11b.id}`)
+check('comment: marking the task done shows “Comment done” in the campaign results', await waitFor(async () => (await runPanel().getByText('Comment done').isVisible()), 8000))
 
 // ── 12. Publishing safety on the campaign page; old addresses redirect ──
 check('needs-review posts are listed with Review (publishing safety kept)', (await page.locator('section[aria-label="Needs your attention"] li', { hasText: 'Check whether it was posted' }).count()) >= 1)

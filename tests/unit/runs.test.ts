@@ -328,6 +328,29 @@ check('… first profile posts the draft, the other an independent copy with the
   const task = db.get<{ kind: string; due_at: string | null; status: string }>('SELECT kind, due_at, status FROM engagement_tasks WHERE id = (SELECT engagement_task_id FROM run_items WHERE run_id = :id)', { id: rr.id })
   check('… a repost task for one account, due at the campaign run time, nothing published', ritems.length === 1 && ritems[0]!.kind === 'engagement' && task?.kind === 'repost' && task.due_at === runAt && task.status === 'open' && published.length === pubBefore, JSON.stringify(task))
   check('… the campaign completes (the repost itself is done by you)', await waitFor(() => runs.details(rr.id).run.status === 'completed', 4000), runs.details(rr.id).run.status)
+  // Comment campaign: your comment text, one of your accounts per post (never the same comment
+  // from several accounts), and the campaign result follows the task's real status.
+  db.run("UPDATE automation_runs SET status = 'stopped' WHERE status IN ('generating', 'awaiting-approval', 'paused', 'publishing')")
+  const commentCfg: AutomationConfig = {
+    ...repostCfg,
+    name: 'Comment campaign',
+    actions: { ...repostCfg.actions, repost: false, comment: true, commentText: 'Great write-up — the section on caching helped me.', engagementLinks: ['https://x.com/author_one/status/1888000000000000011', 'https://x.com/author_two/status/1888000000000000012'] }
+  }
+  check('comment campaign: comment text required', runs.plan({ ...commentCfg, actions: { ...commentCfg.actions, commentText: ' ' } }).problems.some((p) => p.blocking && p.message.includes('comment text')))
+  const cplan = runs.plan(commentCfg)
+  check('comment campaign: one comment task per post', cplan.ok && cplan.engagementTasks === 2, JSON.stringify(cplan.problems))
+  const cr = await runs.start(commentCfg)
+  const ctasks = db.all<{ link_id: string; account_id: string; kind: string; reply_text: string; due_at: string | null }>('SELECT link_id, account_id, kind, reply_text, due_at FROM engagement_tasks WHERE id IN (SELECT engagement_task_id FROM run_items WHERE run_id = :id)', { id: cr.id })
+  check('… reply tasks carry your comment and the run time; each post handled by one account', ctasks.length === 2 && ctasks.every((t) => t.kind === 'reply' && t.reply_text === 'Great write-up — the section on caching helped me.' && t.due_at === runAt) && new Set(ctasks.map((t) => t.link_id)).size === 2, JSON.stringify(ctasks))
+  check('… the work is shared out between your accounts (not one account for everything)', new Set(ctasks.map((t) => t.account_id)).size === 2)
+  const citems = itemsOf(cr.id)
+  check('… each result records profile/account, target post, action', citems.every((i) => i.kind === 'engagement' && i.accountId && i.text?.startsWith('Comment on https://x.com/') && i.engagementStatus === 'open'))
+  const firstTask = db.get<{ id: string }>('SELECT engagement_task_id AS id FROM run_items WHERE run_id = :id ORDER BY position LIMIT 1', { id: cr.id })!
+  engagement.setStatus([firstTask.id], 'done')
+  check('… marking the task done shows as done in the campaign results', itemsOf(cr.id).some((i) => i.engagementStatus === 'done'))
+  const again = runs.plan(commentCfg)
+  const second = await runs.start(commentCfg)
+  check('… running it again creates no task: the same comment can’t come from another of your accounts, nor twice from one', itemsOf(second.id).length === 0 && again.ok, JSON.stringify(itemsOf(second.id).map((i) => [i.accountId, i.text])))
   check('post campaign still needs posts', runs.plan({ ...repostCfg, actions: { ...repostCfg.actions, publish: true, repost: false, engagementLinks: [] } }).problems.some((p) => p.blocking && p.message.includes('Choose the drafts')))
 }
 

@@ -7,10 +7,10 @@ Built with Electron, React, TypeScript, Vite (electron-vite) and Tailwind CSS.
 - **Create Post:** write a post yourself or with AI (AI Post / Manual Post), add images, preview and
   edit it, then **Publish now** to all or selected accounts (with live progress), or **Use in a
   campaign**.
-- **Campaign Automation:** choose **Post** or **Repost**, **All** or **selected** profiles, the
-  posts, and a run time (now or later), then **Start campaign**. It shows Running, Completed or
-  Failed, with a result for each profile. Reposts are tasks you complete yourself, one account per
-  post.
+- **Campaign Automation:** choose **Post**, **Repost** or **Comment**, **All** or **selected**
+  profiles, the content, and a run time (now or later), then **Start campaign**. It shows Running,
+  Completed or Failed, with a result for each profile and action. Reposts and comments are tasks you
+  complete yourself, one account per post, never the same comment from two of your accounts.
 
 Dashboard, Accounts & Profiles, Post Links and Settings are unchanged.
 See [docs/automation.md](docs/automation.md).

@@ -44,9 +44,11 @@ The campaign form has four choices and one button.
 
 1. **Action:**
    - **Post** publishes your saved posts.
-   - **Repost** plans repost tasks: X Auto opens the post in the profile for you, and you repost
-     it. Reposts are never automated, and only one of your accounts gets each post, because several
-     of your accounts reposting the same post is coordinated engagement.
+   - **Repost** and **Comment** plan tasks: X Auto opens the post in the profile for you, and you
+     repost it or post the comment. Neither is automated.
+   - A comment is the text you write, so it is approved by you.
+   - Only one of your accounts gets each post. The same comment is never planned from two of your
+     accounts, or twice from one, because that is coordinated engagement.
 2. **Profiles:** **All profiles** or **Select profiles** (search, Select all / Deselect all), with
    live counts. The signed-in X account is always checked before posting; unavailable profiles and
    accounts without a confirmed username are left out.
@@ -54,16 +56,18 @@ The campaign form has four choices and one button.
    - For Post, choose saved posts (AI or manual, from Create Post). They are shared out, one profile
      each, unless you turn on **Post each one from every selected profile** (repeated content, which
      X can limit).
-   - For Repost, choose posts from the Post Links library.
-4. **Run time:** **Now**, or **at a date and time**. For reposts, the run time becomes the task's
-   due time.
+   - For Repost or Comment, choose posts from the Post Links library. For Comment, also write the
+     comment.
+   - The number of available saved posts and post links is shown.
+4. **Run time:** **Now**, or **at a date and time**. For reposts and comments, the run time becomes
+   the task's due time.
 
 **Start campaign** starts it in one click. Blocking problems (no posts, no usable profile, a time in
 the past) are shown above the button.
 
 **While it runs**, the campaign shows **Running**, **Completed** or **Failed**, a progress bar, and
-the result for each profile and action: published (with **View on X**), failed, waiting, or repost
-task for you. **Stop** cancels posts that haven't started; they go back to your posts.
+the result for each profile and action: published (with **View on X**), failed, or waiting; for
+reposts and comments, whether you've done or skipped the task yet. **Stop** cancels posts that haven't started; they go back to your posts.
 
 **Further down the page:**
 

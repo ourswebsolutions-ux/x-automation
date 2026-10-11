@@ -144,6 +144,8 @@ export interface RunItem {
   draftId: Id | null
   /** The post comes from one of your own drafts (not generated). */
   fromDraft: boolean
+  /** Comment / repost tasks: whether you have done it yet (null for posts). */
+  engagementStatus: 'open' | 'done' | 'skipped' | null
   /** Post text preview (from the draft). */
   text: string | null
   /** Library asset id of the attached image, if any. */

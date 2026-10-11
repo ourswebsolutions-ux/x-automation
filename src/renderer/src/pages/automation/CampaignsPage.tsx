@@ -98,7 +98,7 @@ export function CampaignsPage() {
     ? ''
     : choices.action === 'post'
       ? `${pluralize(plan.posts, 'post')} on ${pluralize(plan.profiles.eligible, 'profile')}`
-      : `${pluralize(plan.engagementTasks, 'repost task')} for your profiles`
+      : `${pluralize(plan.engagementTasks, choices.action === 'repost' ? 'repost task' : 'comment task')} for your profiles`
 
   const start = async () => {
     setStarting(true)
@@ -117,7 +117,7 @@ export function CampaignsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={NAV_ITEMS.campaigns.label} description="Post or repost from your profiles — choose the profiles, the posts and when to run." />
+      <PageHeader title={NAV_ITEMS.campaigns.label} description="Post, repost or comment from your profiles — choose the profiles, the content and when to run." />
 
       {viewRun && <RunPanel runId={viewRun} />}
 
