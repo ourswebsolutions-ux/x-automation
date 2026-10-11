@@ -17,16 +17,31 @@ extraResources:
     filter: ['**/*', '!tests/**', '!**/__pycache__/**', '!**/*.pyc']
   - from: engine-runtime/${os}
     to: engine-runtime
-# Artifacts: release/<version>/X-Auto-<version>-<os>-<arch>.<ext> (Windows: …-Setup-…-x64.exe).
+# Artifacts (release/<version>/): X-Auto-<version>-<os>-<arch>.<ext>
+#   linux-x86_64.AppImage · linux-amd64.deb · windows-x64-setup.exe · windows-x64.zip
+#   macos-x64.dmg/.zip · macos-arm64.dmg/.zip — plus the update metadata (latest*.yml, *.blockmap).
+#
+# Auto-update feed: GitHub Releases of the repository below. electron-builder writes app-update.yml
+# into the app from this, and latest.yml / latest-linux.yml / latest-mac.yml next to the installers.
+# Installed clients read the feed anonymously, so the releases must be publicly readable
+# (see docs/release.md). CI may point the feed elsewhere with -c.publish.owner/-c.publish.repo.
+publish:
+  provider: github
+  owner: ourswebsolutions-ux
+  repo: x-automation
+  releaseType: release
 win:
   target:
     - target: nsis
       arch: [x64]
+    - target: zip
+      arch: [x64]
   icon: build/icon.png
-  artifactName: X-Auto-Setup-${version}-x64.${ext}
+  artifactName: X-Auto-${version}-windows-${arch}.${ext}
 # One logo everywhere: build/icon.png (1024×1024, rendered from build/icon.svg, the same mark as the
 # in-app BrandMark). electron-builder derives the Windows .ico, the macOS .icns and the Linux icon set.
 nsis:
+  artifactName: X-Auto-${version}-windows-${arch}-setup.${ext}
   installerIcon: build/icon.ico
   uninstallerIcon: build/icon.ico
   installerHeaderIcon: build/icon.ico
@@ -35,6 +50,8 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   shortcutName: X Auto
+  # Updates and uninstalls never touch %APPDATA%\X Auto (database, settings, vault, images).
+  deleteAppDataOnUninstall: false
 linux:
   target:
     - target: AppImage
@@ -49,19 +66,21 @@ linux:
   synopsis: Desktop workspace for X accounts, drafts, scheduling and automation
 deb:
   packageName: x-auto
-# The bundled Python runtime is built for one architecture (scripts/prepare-engine.mjs --arch),
-# so the mac app is built for that same architecture: arm64 by default (Apple silicon).
-# Unsigned unless a Developer ID certificate is provided (CSC_LINK / CSC_KEY_PASSWORD).
+# The bundled Python runtime is built for one architecture (scripts/prepare-engine.mjs --arch), so
+# each mac architecture is built on its own native runner: electron-builder --mac --arm64 / --x64
+# (the CLI flag picks one of the arches listed here). Unsigned unless a Developer ID certificate is
+# provided (CSC_LINK / CSC_KEY_PASSWORD) — unsigned mac apps can't install updates in place
+# (the app then offers the download page instead).
 mac:
   target:
     - target: dmg
-      arch: [arm64]
+      arch: [arm64, x64]
     - target: zip
-      arch: [arm64]
+      arch: [arm64, x64]
   icon: build/icon.png
   category: public.app-category.productivity
-  artifactName: X-Auto-${version}-mac-${arch}.${ext}
+  artifactName: X-Auto-${version}-macos-${arch}.${ext}
   hardenedRuntime: false
   gatekeeperAssess: false
 dmg:
-  artifactName: X-Auto-${version}-mac-${arch}.${ext}
+  artifactName: X-Auto-${version}-macos-${arch}.${ext}

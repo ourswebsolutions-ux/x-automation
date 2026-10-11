@@ -49,6 +49,7 @@ if (!app.requestSingleInstanceLock()) {
     const current = services
     current.scheduler.stop()
     current.automationSchedules.stop()
+    current.updates.stop()
     const engineRunning = current.engine.status().state === 'ready' || current.engine.status().state === 'starting'
     if (!current.queue.isStarted && !engineRunning) {
       shutdownDone = true
@@ -161,6 +162,7 @@ async function bootstrap(): Promise<void> {
     }, 150)
   })
   current.notifier.attach((notice) => send(IpcEvent.Notice, notice))
+  current.onUpdatesChanged(() => send(IpcEvent.UpdatesChanged, current.updates.get()))
   current.onNoticeClick((notice) => {
     if (!mainWindow) return
     if (mainWindow.isMinimized()) mainWindow.restore()
@@ -194,6 +196,7 @@ async function bootstrap(): Promise<void> {
   current.runs.recover()
   current.automationSchedules.start()
   current.backup.startSchedule()
+  current.updates.start()
   powerMonitor.on('resume', () => {
     services?.scheduler.tick()
     void services?.automationSchedules.tick()

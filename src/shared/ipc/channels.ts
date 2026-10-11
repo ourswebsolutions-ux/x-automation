@@ -9,6 +9,11 @@ export const IpcChannel = {
   WindowGetState: 'window:get-state',
   AppGetInfo: 'app:get-info',
   AppGetSecurity: 'app:get-security',
+  UpdatesStatus: 'updates:status',
+  UpdatesCheck: 'updates:check',
+  UpdatesDownload: 'updates:download',
+  UpdatesInstall: 'updates:install',
+  UpdatesOpenReleasePage: 'updates:open-release-page',
   PreferencesGet: 'preferences:get',
   PreferencesUpdate: 'preferences:update',
   PreferencesReset: 'preferences:reset',
@@ -195,7 +200,9 @@ export const IpcEvent = {
   /** A user-facing notice from the main process. */
   Notice: 'event:notice',
   /** Open a route (e.g. after a desktop notification was clicked). */
-  Navigate: 'event:navigate'
+  Navigate: 'event:navigate',
+  /** The application-update status changed. */
+  UpdatesChanged: 'event:updates-changed'
 } as const
 
 export type IpcEventName = (typeof IpcEvent)[keyof typeof IpcEvent]

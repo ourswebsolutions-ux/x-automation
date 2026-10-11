@@ -18,6 +18,7 @@ import type {
 } from '../types/ai'
 import type { Draft, DraftInput, Id, WorkspaceSummary } from '../types/domain'
 import type { AppNotice } from '../types/notifications'
+import type { UpdateStatus } from '../types/updates'
 import type { AutomationConfig, AutomationMode, AutomationRun, AutomationSchedule, AutomationScheduleInput, PromptPreset, RunDetails, RunItem, RunPlan } from '../types/automation'
 import type { UsageLimit, UsageLimitInput, UsageQuery, UsageRate, UsageRateInput, UsageReport } from '../types/usage'
 import type {
@@ -109,6 +110,16 @@ export interface RelayApi {
     getSecurityPosture(): Promise<SecurityPosture>
     /** Synchronously known platform, used for window chrome decisions. */
     platform: string
+  }
+  /** Application updates from GitHub Releases — nothing is downloaded or installed without the user. */
+  updates: {
+    status(): Promise<UpdateStatus>
+    check(): Promise<UpdateStatus>
+    download(): Promise<UpdateStatus>
+    /** Restarts into the downloaded update; refused while automation is running. */
+    install(): Promise<void>
+    openReleasePage(): Promise<void>
+    onChange(listener: (status: UpdateStatus) => void): Unsubscribe
   }
   preferences: {
     get(): Promise<Preferences>

@@ -40,6 +40,14 @@ const api: RelayApi = {
     getSecurityPosture: () => invoke(IpcChannel.AppGetSecurity),
     platform: process.platform
   },
+  updates: {
+    status: () => invoke(IpcChannel.UpdatesStatus),
+    check: () => invoke(IpcChannel.UpdatesCheck),
+    download: () => invoke(IpcChannel.UpdatesDownload),
+    install: () => invoke(IpcChannel.UpdatesInstall),
+    openReleasePage: () => invoke(IpcChannel.UpdatesOpenReleasePage),
+    onChange: (listener) => subscribe(IpcEvent.UpdatesChanged, listener)
+  },
   preferences: {
     get: () => invoke(IpcChannel.PreferencesGet),
     update: (patch) => invoke(IpcChannel.PreferencesUpdate, patch),

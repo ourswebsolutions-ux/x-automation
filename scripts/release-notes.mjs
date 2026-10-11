@@ -8,6 +8,7 @@
 import { execFileSync } from 'node:child_process'
 import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { expectedAssets } from './release-assets.mjs'
 
 const [tag, dir = 'dist'] = process.argv.slice(2)
 if (!tag) {
@@ -27,20 +28,13 @@ const commits = git('log', range, '--no-merges', '--pretty=format:- %s (%h)')
   .split('\n')
   .filter((line) => line && !/^- Release v\d/.test(line))
 
-const kind = (name) => {
-  if (name.endsWith('.AppImage')) return ['Linux', 'AppImage (portable)']
-  if (name.endsWith('.deb')) return ['Linux', 'Debian/Ubuntu package']
-  if (name.endsWith('.exe')) return ['Windows', 'NSIS installer']
-  if (name.endsWith('.dmg')) return ['macOS', 'Disk image']
-  if (name.endsWith('.zip')) return ['macOS', 'App archive']
-  if (name === 'SHA256SUMS.txt') return ['All', 'SHA-256 checksums']
-  return ['', '']
-}
-const arch = (name) => (/arm64|aarch64/.test(name) ? 'arm64' : /x64|amd64|x86_64/.test(name) ? 'x64' : '—')
-const size = (bytes) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
 const version = tag.replace(/^v/, '')
+const size = (bytes) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
+// Platform, architecture and type come from the single definition of a complete release.
+const known = new Map(expectedAssets(version).all.map((a) => [a.name, a]))
+known.set('SHA256SUMS.txt', { platform: 'All', arch: '—', type: 'SHA-256 checksums' })
+const files = readdirSync(dir).filter((f) => known.has(f)).sort((a, b) => (known.get(a).platform + a).localeCompare(known.get(b).platform + b))
 
-const files = readdirSync(dir).filter((f) => kind(f)[0]).sort()
 const lines = [
   `## X Auto ${version}`,
   '',
@@ -53,14 +47,15 @@ const lines = [
   '| File | Platform | Architecture | Type | Size |',
   '| --- | --- | --- | --- | --- |',
   ...files.map((f) => {
-    const [platform, type] = kind(f)
-    return `| \`${f}\` | ${platform} | ${f === 'SHA256SUMS.txt' ? '—' : arch(f)} | ${type} | ${size(statSync(join(dir, f)).size)} |`
+    const a = known.get(f)
+    return `| \`${f}\` | ${a.platform} | ${a.arch} | ${a.type} | ${size(statSync(join(dir, f)).size)} |`
   }),
   '',
   '### Notes',
   '',
   '- The Python + Playwright automation engine is bundled; nothing else needs to be installed. IX Browser must be installed separately.',
   '- Installers are **unsigned** unless signing is configured: Windows SmartScreen and macOS Gatekeeper will warn (macOS: right-click → Open).',
+  '- Updates: the Windows installer and the Linux AppImage update in the app; the Windows ZIP, Linux .deb and unsigned macOS builds announce new versions and open this page.',
   '- Publishing to x.com and a real IX Browser installation have not been verified by automated tests — those use local stand-ins.'
 ]
 console.log(lines.join('\n'))

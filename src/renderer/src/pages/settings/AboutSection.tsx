@@ -9,7 +9,7 @@ export function AboutSection() {
   const rows: [string, string][] = info
     ? [
         ['Version', info.version],
-        ['Release phase', `Phase ${info.phase} — foundation`],
+        ['Release phase', `Phase ${info.phase}`],
         ['Build', info.isPackaged ? 'Packaged' : 'Development'],
         ['Platform', `${info.platform} · ${info.arch}`],
         ['Electron', info.versions.electron],

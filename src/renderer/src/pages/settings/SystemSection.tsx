@@ -7,6 +7,7 @@ import { useAsync } from '@/hooks/useAsync'
 import { errorMessage, relay } from '@/lib/bridge'
 import { AboutSection } from './AboutSection'
 import { SecuritySection } from './SecuritySection'
+import { UpdatesSection } from './UpdatesSection'
 
 /**
  * Settings → Security & app info: how data is protected, app information, a
@@ -38,6 +39,7 @@ export function SystemSection() {
           </Button>
         </Notice>
       )}
+      <UpdatesSection />
       <SecuritySection />
       <SettingsSection title="Your data" description="Everything is stored on this computer.">
         <SettingsRow

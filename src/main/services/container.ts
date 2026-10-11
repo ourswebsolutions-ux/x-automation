@@ -1,6 +1,8 @@
-import { app, Notification } from 'electron'
+import { app, Notification, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
+import { UpdateService } from './updates/updateService'
+import { createUpdater, detectUpdatePlatform } from './updates/platform'
 import { AccountService } from './accounts/accountService'
 import { AiService } from './ai/aiService'
 import { AutomationService } from './engine/automationService'
@@ -97,6 +99,9 @@ export interface AppServices {
   onNoticeClick: (listener: (notice: AppNotice) => void) => () => void
   /** Queue, schedules or post links changed. */
   onPublishingChanged: (listener: () => void) => () => void
+  /** Application updates from GitHub Releases. */
+  updates: UpdateService
+  onUpdatesChanged: (listener: () => void) => () => void
   /** Image generation providers register here in Phase 7. */
   imageProviders: ProviderRegistry<ImageGenerationProvider>
   integrations: IntegrationsService
@@ -331,6 +336,47 @@ export async function createServices(): Promise<AppServices> {
   })
   const automationSchedules = new AutomationScheduleService({ db: database.db, runs, notifier, log: logger.scope('automation-schedules'), onChange: publishingChanged })
 
+  // Application updates (GitHub Releases). How this copy can be updated depends on how it was installed.
+  const updateLog = logger.scope('updates')
+  const updateEnv = { isPackaged: app.isPackaged, platform: process.platform, execPath: process.execPath, resourcesPath: process.resourcesPath, productName: app.getName(), env: process.env }
+  const updatePlatform = detectUpdatePlatform(updateEnv)
+  const updater =
+    updatePlatform.mode === 'disabled'
+      ? null
+      : await createUpdater(updateEnv, { info: (m) => updateLog.info(m), warn: (m) => updateLog.warn(m), error: (m) => updateLog.error(m) }).catch((error: unknown) => {
+          updateLog.error('The updater could not be started', error)
+          return null
+        })
+  const updatesListeners = new Set<() => void>()
+  const updates = new UpdateService({
+    updater,
+    mode: updatePlatform.mode,
+    modeReason: updater ? updatePlatform.reason : (updatePlatform.reason ?? 'The updater could not be started.'),
+    currentVersion: app.getVersion(),
+    feed: updatePlatform.feed,
+    automationBusy: () => {
+      if (queue.current()) return 'A post is being published right now. Install the update when it has finished (or pause automation first).'
+      if (runs.active()?.status === 'generating') return 'An automation run is preparing posts. Pause it, or install the update when it has finished.'
+      return null
+    },
+    beforeInstall: async () => {
+      // Scheduled posts and runs are kept in the database and continue after the restart.
+      scheduler.stop()
+      automationSchedules.stop()
+      await queue.stop()
+      const state = engine.status().state
+      if (state === 'ready' || state === 'starting') await engine.stop('update')
+    },
+    openExternal: async (url) => {
+      if (!url.startsWith('https://github.com/')) throw new Error('Only GitHub release pages can be opened.')
+      await shell.openExternal(url)
+    },
+    settings: repositories.settings,
+    notifier,
+    log: updateLog,
+    onChange: () => updatesListeners.forEach((listener) => listener())
+  })
+
   return {
     logger,
     database,
@@ -384,6 +430,11 @@ export async function createServices(): Promise<AppServices> {
     onPublishingChanged: (listener) => {
       publishingListeners.add(listener)
       return () => publishingListeners.delete(listener)
+    },
+    updates,
+    onUpdatesChanged: (listener) => {
+      updatesListeners.add(listener)
+      return () => updatesListeners.delete(listener)
     },
     generator,
     accounts,

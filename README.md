@@ -64,10 +64,10 @@ scheduling are configurable but **not connected** yet, and the interface says so
 | `npm run typecheck` | Strict TypeScript checks (main/preload and renderer) |
 | `npm run build` | Typecheck, then build main, preload and renderer into `out/` |
 | `npm run preview` | Run the production build |
-| `npm run release -- 1.0.0` | Check, test, tag `v1.0.0` and push — GitHub Actions builds Linux, Windows and macOS and publishes the GitHub Release ([docs/release.md](docs/release.md)) |
+| `npm run release -- 1.0.1` | One-command release: checks, tests, version, tag, push, then waits for the native Linux/Windows/macOS builds and verifies the published GitHub Release and its auto-update metadata ([docs/release.md](docs/release.md)) |
 | `npm run dist:linux` | Build the Linux AppImage and .deb into `release/<version>/` |
 | `npm run dist:win` | Build the Windows NSIS installer into `release/<version>/` (run on Windows) |
-| `npm run dist:mac` | Build the macOS arm64 .dmg and .zip into `release/<version>/` (run on a Mac) |
+| `npm run dist:mac` / `dist:mac:x64` | Build the macOS arm64 / Intel .dmg and .zip into `release/<version>/` (run on a Mac) |
 | `npm run dist:dir` | Build an unpacked app for the current OS (quick packaging check) |
 | `npm run engine:prepare -- --platform=win\|linux\|mac` | Download the pinned, checksum-verified Python runtime and install the hash-locked engine dependencies into `engine-runtime/<platform>/` (build machines only) |
 | `npm run engine:test` | Run the engine's Python tests with the bundled runtime (attaches to a real Chrome/Chromium for the CDP test when one is installed) |
@@ -375,14 +375,17 @@ Settings → General to see only the real state of this installation.
 
 | Command | What it runs |
 | --- | --- |
-| `npm test` | Unit suites and engine tests |
-| `npm run test:unit` | 13 unit suites on Electron's Node runtime (`tests/unit`) |
+| `npm test` | Unit suites, release tooling tests and engine tests |
+| `npm run test:unit` | 14 unit suites on Electron's Node runtime (`tests/unit`) |
+| `npm run test:release` | Release tooling: versions, required assets, installer signatures, update metadata, release command safety |
+| `npm run test:updates` | Auto-update lifecycle against a local feed (real electron-updater, real UI) |
 | `npm run engine:test` | The engine's Python tests |
 | `npm run test:e2e` | Builds, then runs the automation end-to-end test (`tests/e2e/automation.e2e.mjs`) |
 
 - **Unit suites** (`tests/unit`): repositories and migrations, IX client, accounts, AI, generator,
   images, proxies, queue and publishing, links and engagement, automation controls and usage,
-  backups, automation runs (including drafts as content), and recurring automation schedules.
+  backups, automation runs (including drafts as content), recurring automation schedules, and
+  application updates.
 - **Engine tests**: publishing, finding a post on the profile, and opening posts, all against a real
   Chrome and a local X stand-in.
 - **End-to-end test**: drives the real app, the bundled engine and three real Chrome browsers

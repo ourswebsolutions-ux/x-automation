@@ -1,0 +1,155 @@
+// Release tooling tests (plain Node): version rules, the required asset list, installer signature
+// checks, mac metadata merging, full-set validation, and the release command's safety (dry run
+// restores the version files byte-for-byte; failures change nothing). No network, no GitHub.
+//   node tests/release/release.test.mjs
+import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import yaml from 'js-yaml'
+import { compareVersions, expectedAssets, mergeMacMetadata, prepareRelease, signatureProblem, updateChannel } from '../../scripts/release-assets.mjs'
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+const results = []
+const check = (name, ok, extra = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? ' — ' + String(extra).slice(0, 300) : ''}`)
+
+// ── versions & channels ──
+check('versions: ordering incl. pre-releases', compareVersions('1.0.1', '1.0.0') > 0 && compareVersions('1.0.0', '1.0.0-rc.1') > 0 && compareVersions('1.0.0-beta.11', '1.0.0-beta.2') > 0 && compareVersions('1.0.0-alpha', '1.0.0-alpha.1') < 0 && compareVersions('2.0.0', '2.0.0') === 0)
+check('channels: stable → latest, pre-release → its name', updateChannel('1.0.1') === 'latest' && updateChannel('1.1.0-beta.3') === 'beta' && updateChannel('2.0.0-rc.1') === 'rc')
+
+// ── required assets ──
+const exp = expectedAssets('1.0.1')
+const names = exp.all.map((a) => a.name)
+const required = [
+  'X-Auto-1.0.1-linux-x86_64.AppImage',
+  'X-Auto-1.0.1-linux-amd64.deb',
+  'X-Auto-1.0.1-windows-x64-setup.exe',
+  'X-Auto-1.0.1-windows-x64.zip',
+  'X-Auto-1.0.1-macos-x64.dmg',
+  'X-Auto-1.0.1-macos-arm64.dmg',
+  'X-Auto-1.0.1-macos-x64.zip',
+  'X-Auto-1.0.1-macos-arm64.zip',
+  'latest.yml',
+  'latest-linux.yml',
+  'latest-mac.yml'
+]
+check('every required installer and metadata file is expected', required.every((n) => names.includes(n)) && names.length === required.length, names.join(', '))
+check('pre-release metadata uses its own channel files', expectedAssets('1.1.0-beta.1').metadata.map((m) => m.name).join() === 'beta.yml,beta-linux.yml,beta-mac.yml')
+
+// ── installer signatures ──
+const pad = (b) => Buffer.concat([Buffer.from(b), Buffer.alloc(64)])
+const appimageHead = pad([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0, 0x41, 0x49, 0x02])
+const dmgTail = Buffer.concat([Buffer.alloc(512 - 4 - 508 + 0), Buffer.from('koly'), Buffer.alloc(508)])
+check('signatures: real formats accepted', !signatureProblem('exe', pad('MZ')) && !signatureProblem('zip', pad([0x50, 0x4b, 3, 4])) && !signatureProblem('appimage', appimageHead) && !signatureProblem('deb', pad('!<arch>\n')) && !signatureProblem('dmg', pad('x'), dmgTail))
+check('signatures: a ZIP renamed to .exe is rejected', /MZ/.test(signatureProblem('exe', pad([0x50, 0x4b, 3, 4])) ?? ''))
+check('signatures: a plain ELF is not an AppImage; a non-UDIF file is not a dmg', Boolean(signatureProblem('appimage', pad([0x7f, 0x45, 0x4c, 0x46]))) && Boolean(signatureProblem('dmg', pad('x'), Buffer.alloc(512))))
+
+// ── mac metadata merge ──
+const macX = { version: '1.0.1', files: [{ url: 'X-Auto-1.0.1-macos-x64.zip', sha512: 'a', size: 1 }, { url: 'X-Auto-1.0.1-macos-x64.dmg', sha512: 'b', size: 2 }], path: 'X-Auto-1.0.1-macos-x64.zip', sha512: 'a', releaseDate: '2026-10-11T10:00:00.000Z' }
+const macA = { version: '1.0.1', files: [{ url: 'X-Auto-1.0.1-macos-arm64.zip', sha512: 'c', size: 3 }], path: 'X-Auto-1.0.1-macos-arm64.zip', sha512: 'c', releaseDate: '2026-10-11T10:05:00.000Z' }
+const merged = mergeMacMetadata([macA, macX])
+check('mac merge: both arches listed, legacy path = Intel zip, newest date', merged.files.length === 3 && merged.path === 'X-Auto-1.0.1-macos-x64.zip' && merged.releaseDate === '2026-10-11T10:05:00.000Z')
+let mismatch = false
+try { mergeMacMetadata([macA, { ...macX, version: '1.0.2' }]) } catch { mismatch = true }
+check('mac merge: refuses mixed versions', mismatch)
+
+// ── full-set validation with synthetic installers ──
+const dir = mkdtempSync(join(tmpdir(), 'axora-rel-'))
+const v = '1.0.1'
+const body = (head, tail = Buffer.alloc(0)) => Buffer.concat([head, Buffer.alloc(4096, 7), tail])
+const files = {
+  [`X-Auto-${v}-linux-x86_64.AppImage`]: body(appimageHead),
+  [`X-Auto-${v}-linux-amd64.deb`]: body(pad('!<arch>\n')),
+  [`X-Auto-${v}-windows-x64-setup.exe`]: body(pad('MZ')),
+  [`X-Auto-${v}-windows-x64.zip`]: body(pad([0x50, 0x4b, 3, 4])),
+  [`X-Auto-${v}-macos-x64.dmg`]: body(pad('x'), dmgTail),
+  [`X-Auto-${v}-macos-arm64.dmg`]: body(pad('x'), dmgTail),
+  [`X-Auto-${v}-macos-x64.zip`]: body(pad([0x50, 0x4b, 3, 4])),
+  [`X-Auto-${v}-macos-arm64.zip`]: body(pad([0x50, 0x4b, 3, 4]))
+}
+for (const [n, b] of Object.entries(files)) writeFileSync(join(dir, n), b)
+const entry = (n) => ({ url: n, sha512: createHash('sha512').update(files[n]).digest('base64'), size: files[n].length })
+writeFileSync(join(dir, 'latest.yml'), yaml.dump({ version: v, files: [entry(`X-Auto-${v}-windows-x64-setup.exe`)], path: `X-Auto-${v}-windows-x64-setup.exe` }))
+writeFileSync(join(dir, 'latest-linux.yml'), yaml.dump({ version: v, files: [entry(`X-Auto-${v}-linux-x86_64.AppImage`), entry(`X-Auto-${v}-linux-amd64.deb`)] }))
+writeFileSync(join(dir, 'latest-mac-x64.yml'), yaml.dump({ version: v, files: [entry(`X-Auto-${v}-macos-x64.zip`)] }))
+writeFileSync(join(dir, 'latest-mac-arm64.yml'), yaml.dump({ version: v, files: [entry(`X-Auto-${v}-macos-arm64.zip`)] }))
+let res = prepareRelease(v, dir, { minInstallerBytes: 1024 })
+check('complete set validates; per-arch mac metadata merged; checksums written', res.problems.length === 0 && yaml.load(readFileSync(join(dir, 'latest-mac.yml'), 'utf8')).files.length === 2 && readFileSync(join(dir, 'SHA256SUMS.txt'), 'utf8').includes('windows-x64-setup.exe'), res.problems.join('; '))
+
+// tampered installer → SHA-512 mismatch caught
+writeFileSync(join(dir, `X-Auto-${v}-linux-x86_64.AppImage`), body(appimageHead, Buffer.from('changed')))
+res = prepareRelease(v, dir, { minInstallerBytes: 1024 })
+check('tampered file: metadata SHA-512/size mismatch detected', res.problems.some((p) => p.includes('latest-linux.yml') && (p.includes('SHA-512') || p.includes('size'))), res.problems.join('; '))
+writeFileSync(join(dir, `X-Auto-${v}-linux-x86_64.AppImage`), files[`X-Auto-${v}-linux-x86_64.AppImage`])
+
+// missing platform → refused (no partial release)
+rmSync(join(dir, `X-Auto-${v}-macos-arm64.dmg`))
+res = prepareRelease(v, dir, { minInstallerBytes: 1024 })
+check('missing installer: release refused', res.problems.some((p) => p === `missing X-Auto-${v}-macos-arm64.dmg`))
+writeFileSync(join(dir, `X-Auto-${v}-macos-arm64.dmg`), files[`X-Auto-${v}-macos-arm64.dmg`])
+
+// wrong version in metadata, empty installer, renamed archive
+writeFileSync(join(dir, 'latest.yml'), yaml.dump({ version: '1.0.0', files: [entry(`X-Auto-${v}-windows-x64-setup.exe`)] }))
+writeFileSync(join(dir, `X-Auto-${v}-windows-x64-setup.exe`), files[`X-Auto-${v}-windows-x64.zip`])
+res = prepareRelease(v, dir, { minInstallerBytes: 1024 })
+check('wrong metadata version and a ZIP posing as the installer are both caught', res.problems.some((p) => p.includes('version 1.0.0')) && res.problems.some((p) => p.includes('not a Windows executable')), res.problems.join('; '))
+res = prepareRelease(v, dir)
+check('tiny installers are rejected at the real size threshold', res.problems.some((p) => /is only \d+ bytes/.test(p)))
+rmSync(dir, { recursive: true, force: true })
+
+// ── the release command in a scratch repository (offline, never touches GitHub) ──
+const scratch = mkdtempSync(join(tmpdir(), 'axora-relcmd-'))
+mkdirSync(join(scratch, 'scripts'))
+cpSync(join(root, 'scripts/release.mjs'), join(scratch, 'scripts/release.mjs'))
+cpSync(join(root, 'scripts/release-assets.mjs'), join(scratch, 'scripts/release-assets.mjs'))
+symlinkSync(join(root, 'node_modules'), join(scratch, 'node_modules'), 'dir')
+// Unusual but valid formatting: a byte-exact restore must keep it, a re-serialisation would not.
+const pkg = '{\n    "name": "scratch-app",\n    "version": "0.5.0",\n    "private": true,\n    "type": "module"\n}'
+const lock = '{\n    "name": "scratch-app",\n    "version": "0.5.0",\n    "lockfileVersion": 3,\n    "requires": true,\n    "packages": {\n        "": {\n            "name": "scratch-app",\n            "version": "0.5.0"\n        }\n    }\n}'
+writeFileSync(join(scratch, 'package.json'), pkg)
+writeFileSync(join(scratch, 'package-lock.json'), lock)
+writeFileSync(join(scratch, '.gitignore'), 'node_modules\n')
+const sh = (cmd, a, env = {}) => spawnSync(cmd, a, { cwd: scratch, encoding: 'utf8', env: { ...process.env, ...env } })
+sh('git', ['init', '-q', '-b', 'main'])
+sh('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'add', '-A'])
+sh('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'init'])
+sh('git', ['remote', 'add', 'origin', 'https://github.com/example-owner/example-repo.git'])
+const ghHome = mkdtempSync(join(tmpdir(), 'axora-gh-')) // a GitHub CLI config with no login
+const env = { GH_CONFIG_DIR: ghHome, GH_TOKEN: '', GITHUB_TOKEN: '', AXORA_RELEASE_SELFTEST: '1', NO_COLOR: '1' }
+const release = (...a) => sh(process.execPath, ['scripts/release.mjs', ...a], env)
+const unchanged = () => readFileSync(join(scratch, 'package.json'), 'utf8') === pkg && readFileSync(join(scratch, 'package-lock.json'), 'utf8') === lock
+const head0 = sh('git', ['rev-parse', 'HEAD']).stdout.trim()
+const state = () => ({ head: sh('git', ['rev-parse', 'HEAD']).stdout.trim(), tags: sh('git', ['tag', '-l']).stdout.trim(), dirty: sh('git', ['status', '--porcelain']).stdout.trim() })
+
+let r = release('0.6.0', '--dry-run')
+let st = state()
+check('dry run: succeeds, bumps then restores both version files byte-for-byte', r.status === 0 && unchanged() && /restored byte-for-byte/.test(r.stdout), (r.stdout + r.stderr).slice(-400))
+check('dry run: no commit, no tag, clean tree', st.head === head0 && st.tags === '' && st.dirty === '', JSON.stringify(st))
+check('dry run: lists the files a real run would publish', r.stdout.includes('X-Auto-0.6.0-windows-x64-setup.exe') && r.stdout.includes('latest-mac.yml'))
+
+r = release('0.6.0')
+check('real run without GitHub login: stops before any change, with the fix', r.status === 1 && /not logged in|not installed/.test(r.stderr) && /gh auth login|cli\.github\.com/.test(r.stderr) && unchanged() && state().head === head0 && state().tags === '', r.stderr.slice(-300))
+check('invalid version refused', release('abc', '--dry-run').status === 1 && unchanged())
+check('older or equal version refused', /not newer/.test(release('0.5.0', '--dry-run').stderr) && /not newer/.test(release('0.4.9', '--dry-run').stderr))
+check('numeric-only pre-release refused (would mix with the stable channel)', /must start with a name/.test(release('0.6.0-1', '--dry-run').stderr))
+check('pre-release dry run works', release('0.6.0-beta.1', '--dry-run').status === 0 && unchanged())
+writeFileSync(join(scratch, 'notes.txt'), 'uncommitted')
+r = release('0.6.0', '--dry-run')
+check('uncommitted changes refused (and left untouched)', r.status === 1 && /uncommitted/.test(r.stderr) && readFileSync(join(scratch, 'notes.txt'), 'utf8') === 'uncommitted' && unchanged())
+rmSync(join(scratch, 'notes.txt'))
+sh('git', ['switch', '-q', '-c', 'feature'])
+check('releases only from main', /Releases are made from main/.test(release('0.6.0', '--dry-run').stderr))
+sh('git', ['switch', '-q', 'main'])
+sh('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'tag', '-a', 'v0.7.0', '-m', 'existing'])
+r = release('0.7.0', '--dry-run')
+check('existing tag: never moved or deleted (dry run reports it)', r.status === 0 && /already exists/.test(r.stdout) && sh('git', ['rev-parse', 'v0.7.0^{commit}']).stdout.trim() === head0 && unchanged())
+
+rmSync(scratch, { recursive: true, force: true })
+rmSync(ghHome, { recursive: true, force: true })
+
+console.log(results.join('\n'))
+const failed = results.filter((x) => x.startsWith('FAIL')).length
+console.log(`\n${failed} failed of ${results.length}`)
+process.exit(failed ? 1 : 0)
