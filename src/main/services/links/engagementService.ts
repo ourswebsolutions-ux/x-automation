@@ -55,7 +55,7 @@ const NEEDS_ACCOUNT: readonly EngagementKind[] = ['reply', 'like', 'repost', 'qu
 
 /**
  * Engagement tasks: a checklist of things a person plans to do with a post
- * from one of their accounts. Axora Relay never likes, reposts, quotes,
+ * from one of their accounts. X Auto never likes, reposts, quotes,
  * replies or follows on its own — it can open the post in the account's
  * IX Browser profile, and the person acts and marks the task done.
  *
@@ -244,7 +244,7 @@ export class EngagementService {
     const externalId = account.profile.externalId
     let address = this.deps.ixBrowser.debuggingAddressFor(externalId)
     if (!address && account.profile.runState === 'running') {
-      throw new ValidationError('The profile is open in IX Browser but was not opened by Axora Relay. Close it there and try again, or open the post yourself.')
+      throw new ValidationError('The profile is open in IX Browser but was not opened by X Auto. Close it there and try again, or open the post yourself.')
     }
     if (!address) {
       try {

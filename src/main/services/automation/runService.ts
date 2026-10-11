@@ -290,7 +290,7 @@ export class RunService {
     if (badLinks.length) block(`${badLinks.length} engagement ${badLinks.length === 1 ? 'link is' : 'links are'} not a link to a post on X.`)
     if (actions.comment && !actions.commentText.trim()) block('Write the comment text for comment tasks.')
     const engagementTasks = kinds.length && eligible.length ? links.filter((l) => parsePostUrl(l)).length * kinds.length : 0
-    if (engagementTasks) warn('Reposts, comments and likes are planned as tasks you complete in the profile — Axora Relay doesn’t do them automatically.')
+    if (engagementTasks) warn('Reposts, comments and likes are planned as tasks you complete in the profile — X Auto doesn’t do them automatically.')
 
     const summary: string[] = []
     if (publishing) summary.push(config.mode === 'full-auto' ? 'Publish automatically (Full Auto)' : 'Publish after your approval (Manual Approval)')
@@ -535,10 +535,10 @@ export class RunService {
     const runs = this.deps.db.all<{ id: string }>("SELECT id FROM automation_runs WHERE status = 'generating'")
     for (const { id } of runs) {
       this.deps.db.run("UPDATE run_items SET status = 'pending', updated_at = :now WHERE run_id = :id AND status = 'generating'", { id, now })
-      this.setStatus(id, 'paused', 'Paused because Axora Relay closed while posts were being prepared.')
+      this.setStatus(id, 'paused', 'Paused because X Auto closed while posts were being prepared.')
     }
     if (runs.length) {
-      this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation paused', body: 'Axora Relay closed while posts were being prepared. Resume the run to continue.', to: '/automation' })
+      this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation paused', body: 'X Auto closed while posts were being prepared. Resume the run to continue.', to: '/automation' })
     }
     for (const r of this.deps.db.all<{ id: string }>("SELECT id FROM automation_runs WHERE status = 'publishing'")) this.checkFinished(r.id)
   }

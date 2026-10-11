@@ -57,7 +57,7 @@ export function BackupSection() {
     <>
       <div className="flex flex-col gap-1">
         <h2 className="text-base font-medium text-fg">Backup & restore</h2>
-        <p className="text-sm text-fg-subtle text-pretty">A backup is one file with all your Axora Relay data and images. Each one is checked after it is written.</p>
+        <p className="text-sm text-fg-subtle text-pretty">A backup is one file with all your X Auto data and images. Each one is checked after it is written.</p>
       </div>
 
       {!s ? (
@@ -116,7 +116,7 @@ export function BackupSection() {
             <SettingsRow
               label="Automatic backups"
               htmlFor="backup-schedule"
-              description="While Axora Relay is running. Older automatic backups are removed; backups you make yourself are kept."
+              description="While X Auto is running. Older automatic backups are removed; backups you make yourself are kept."
               control={
                 <span className="flex items-center gap-2">
                   <Select<'off' | 'daily' | 'weekly'>
@@ -156,7 +156,7 @@ export function BackupSection() {
       <SettingsSection title="Restore" description="Replaces your current data with a backup. A safety backup of the current data is made first.">
         <SettingsRow
           label="Restore from a backup"
-          description="Choose an Axora Relay backup file (.axrbackup, or an older .sqlite backup)."
+          description="Choose an X Auto backup file (.axrbackup, or an older .sqlite backup)."
           control={
             <Button icon={ArchiveRestore} loading={working === 'file'} disabled={Boolean(s?.busy)} onClick={() => inspect('file')}>
               Choose backup…

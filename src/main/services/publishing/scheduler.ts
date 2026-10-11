@@ -53,7 +53,7 @@ export class Scheduler {
       for (const row of stale) {
         const late = now.getTime() - new Date(row.run_at).getTime() > graceMs && now.getTime() - new Date(row.run_after).getTime() > graceMs
         if (!late) continue
-        this.deps.db.run("UPDATE tasks SET status = 'cancelled', error = 'The scheduled time passed while Axora Relay was closed.', error_code = 'MISSED', finished_at = :now, updated_at = :now WHERE id = :id AND status = 'queued'", {
+        this.deps.db.run("UPDATE tasks SET status = 'cancelled', error = 'The scheduled time passed while X Auto was closed.', error_code = 'MISSED', finished_at = :now, updated_at = :now WHERE id = :id AND status = 'queued'", {
           id: row.task_id,
           now: now.toISOString()
         })
@@ -102,7 +102,7 @@ export class Scheduler {
       this.deps.log.info(`Schedule ${schedule.id.slice(0, 8)} is due; queued for publishing`)
     }
     if (missed) {
-      this.deps.log.warn(`${missed} scheduled post(s) passed their time while Axora Relay was not running`)
+      this.deps.log.warn(`${missed} scheduled post(s) passed their time while X Auto was not running`)
       this.deps.onChange()
     }
     return missed
@@ -133,7 +133,7 @@ export class Scheduler {
         tone: 'warning',
         event: 'taskFailures',
         title: count === 1 ? 'A scheduled post was missed' : `${count} scheduled posts were missed`,
-        body: `${count === 1 ? 'Its' : 'Their'} time passed while Axora Relay was not running. Choose to publish now, reschedule or cancel.`,
+        body: `${count === 1 ? 'Its' : 'Their'} time passed while X Auto was not running. Choose to publish now, reschedule or cancel.`,
         to: '/scheduler?view=attention'
       },
       { key: 'schedules-missed', quietMs: 10 * 60_000 }

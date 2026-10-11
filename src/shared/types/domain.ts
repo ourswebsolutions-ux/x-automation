@@ -136,7 +136,7 @@ export interface PostLink {
   draftId: Id | null
   taskId: Id | null
   source: PostLinkSource
-  /** A short preview of the post text, when Axora Relay published it. */
+  /** A short preview of the post text, when X Auto published it. */
   preview: string
   publishedAt: Timestamp | null
   createdAt: Timestamp

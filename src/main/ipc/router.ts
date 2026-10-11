@@ -26,7 +26,7 @@ function toIpcError(error: unknown): IpcError {
   if (error instanceof DatabaseError) return { code: 'DATABASE', message: 'Your data could not be saved or read. Please try again.' }
   if (error instanceof EngineError) {
     // Engine messages can carry technical detail (exit codes); users get a plain sentence.
-    const message = error.code === 'BUSY' ? error.message : error.code === 'ENGINE_UNAVAILABLE' ? 'Part of this installation is missing. Reinstall Axora Relay.' : 'The automation engine could not do that. Try again, or restart it in Settings → Automation.'
+    const message = error.code === 'BUSY' ? error.message : error.code === 'ENGINE_UNAVAILABLE' ? 'Part of this installation is missing. Reinstall X Auto.' : 'The automation engine could not do that. Try again, or restart it in Settings → Automation.'
     return { code: error.code === 'ENGINE_UNAVAILABLE' ? 'UNAVAILABLE' : 'INTEGRATION', message }
   }
   if (error instanceof AiServiceError) {

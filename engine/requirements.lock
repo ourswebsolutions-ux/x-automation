@@ -1,12 +1,15 @@
-# Hash-locked engine dependencies (CPython 3.12; Windows x64 and Linux x64 wheels).
-# Every hash below was checked against PyPI's published SHA-256 on 2026-10-10.
+# Hash-locked engine dependencies (CPython 3.12; Windows x64, Linux x64 and macOS arm64/x64 wheels).
+# Every hash below was checked against PyPI's published SHA-256 (Windows/Linux 2026-10-10, macOS 2026-10-11).
 # Regenerate only by downloading the wheels and re-verifying their digests.
 playwright==1.63.0 \
     --hash=sha256:2f9a707a6c6c91157ed77bff2b8caeb04b3c8d46e70d585fc134298cbe4b5cc6 \
-    --hash=sha256:ad21bc07516b187965a7521c5cf0df0bd657b17482eaad74335272d35a2b07de
+    --hash=sha256:ad21bc07516b187965a7521c5cf0df0bd657b17482eaad74335272d35a2b07de \
+    --hash=sha256:fd1aa00631d44d55e56e0975bf3f3f285fac4a9fd2813183f0c12a488f1a1b24 \
+    --hash=sha256:84c540759e8e7f01e690e197e04060f48899d37cea322299f255843273d3385d
 greenlet==3.5.6 \
     --hash=sha256:7ac4abb3877c43af320392c664774eef6fa2cc063c79a55fc02d844a3cbe7395 \
-    --hash=sha256:975736b002ed080d124cf81a79cb7e05cb26d6b3f5c7a7b651c0fcce70353aa1
+    --hash=sha256:975736b002ed080d124cf81a79cb7e05cb26d6b3f5c7a7b651c0fcce70353aa1 \
+    --hash=sha256:a5876d0a60355af98d535c47f6cd6eb0f8a432396dab26845d380b92f8412422
 pyee==13.0.1 \
     --hash=sha256:af2f8fede4171ef667dfded53f96e2ed0d6e6bd7ee3bb46437f77e3b57689228
 typing-extensions==4.16.0 \

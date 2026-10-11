@@ -97,7 +97,7 @@ export function SchedulerPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title={NAV_ITEMS.scheduler.label}
-        description="Posts planned per account. Axora Relay publishes them on time while it is running."
+        description="Posts planned per account. X Auto publishes them on time while it is running."
         actions={
           <Button variant="primary" icon={CalendarPlus} onClick={() => setPicking(true)}>
             Schedule a draft
@@ -182,7 +182,7 @@ export function SchedulerPage() {
               size="sm"
               icon={view === 'attention' ? SearchCheck : CalendarClock}
               title={view === 'attention' ? 'Nothing needs your attention' : view === 'history' ? 'No finished schedules yet' : day ? 'Nothing on this day' : 'Nothing scheduled'}
-              description={view === 'upcoming' && !day ? 'Pick a draft and a time — Axora Relay posts it from the account’s IX Browser profile.' : undefined}
+              description={view === 'upcoming' && !day ? 'Pick a draft and a time — X Auto posts it from the account’s IX Browser profile.' : undefined}
               actions={
                 view === 'upcoming' && !day ? (
                   <Button size="sm" icon={CalendarPlus} onClick={() => setPicking(true)}>
@@ -282,7 +282,7 @@ function ScheduleRow({ entry, busy, ...on }: RowProps) {
   const running = schedule.status === 'queued' && task?.status === 'running'
   const detail =
     schedule.status === 'missed'
-      ? 'Its time passed while Axora Relay was not running.'
+      ? 'Its time passed while X Auto was not running.'
       : schedule.status === 'needs-review'
         ? 'It may have been posted — check X and confirm.'
         : schedule.status === 'failed'

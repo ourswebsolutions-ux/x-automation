@@ -81,7 +81,7 @@ export function PublishStatus({ draft, accounts }: { draft: Draft; accounts: Acc
       line = task?.status === 'running' ? `Publishing from ${who} now…` : `Waiting in the queue to post from ${who}.`
       break
     case 'missed':
-      line = `Its time (${formatDateTime(schedule.runAt)}) passed while Axora Relay was not running.`
+      line = `Its time (${formatDateTime(schedule.runAt)}) passed while X Auto was not running.`
       break
     case 'needs-review':
       line = `It may have been posted from ${who}. Check X, then confirm in the task queue.`

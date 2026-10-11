@@ -16,11 +16,11 @@ export function migrate(db: SqliteDatabase, log: ScopedLogger): number {
   const current = db.pragma<number>('user_version') ?? 0
 
   if (appId !== 0 && appId !== APPLICATION_ID) {
-    throw new DatabaseError('This file is not an Axora Relay database', 'INCOMPATIBLE')
+    throw new DatabaseError('This file is not an X Auto database', 'INCOMPATIBLE')
   }
   if (current > LATEST_SCHEMA_VERSION) {
     throw new DatabaseError(
-      `Database schema v${current} was created by a newer version of Axora Relay (this build supports v${LATEST_SCHEMA_VERSION})`,
+      `Database schema v${current} was created by a newer version of X Auto (this build supports v${LATEST_SCHEMA_VERSION})`,
       'INCOMPATIBLE'
     )
   }

@@ -50,7 +50,7 @@ const daysOf = (mask: number) => [0, 1, 2, 3, 4, 5, 6].filter((d) => mask & (1 <
  * Recurring automation schedules — separate from the schedules of individual
  * posts. On each chosen day, between the start and end dates, a schedule
  * starts one automation run whose posts are spread inside the daily window.
- * Runs happen only while Axora Relay is running: a day missed while the app
+ * Runs happen only while X Auto is running: a day missed while the app
  * was closed is not made up later, but a window that is still open when the
  * app starts is used for its remaining time.
  */
@@ -238,7 +238,7 @@ export class AutomationScheduleService {
         if (minute < from) continue
         if (minute >= to) {
           // The window passed without a run (app closed, or another run kept it busy): note it once.
-          this.setFields(row.id, { last_run_date: today, last_message: `Didn’t run on ${today}: Axora Relay wasn’t running or another automation was active during the daily hours.` })
+          this.setFields(row.id, { last_run_date: today, last_message: `Didn’t run on ${today}: X Auto wasn’t running or another automation was active during the daily hours.` })
           this.deps.onChange()
           continue
         }

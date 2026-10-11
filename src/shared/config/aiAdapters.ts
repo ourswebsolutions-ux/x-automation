@@ -1,5 +1,5 @@
 /**
- * AI text adapters: how Axora Relay talks to a provider. Each adapter declares
+ * AI text adapters: how X Auto talks to a provider. Each adapter declares
  * what it can do, so the app never assumes every provider supports the same
  * API, parameters or usage reporting.
  *

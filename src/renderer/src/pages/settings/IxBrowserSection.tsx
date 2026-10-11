@@ -13,14 +13,14 @@ export function IxBrowserSection() {
         </div>
         <p className="text-sm text-fg-subtle text-pretty">
           Browser profiles are read and opened through IX Browser’s Local API V2 on this computer. Only loopback addresses are accepted,
-          so profile data never leaves your machine through Axora Relay.
+          so profile data never leaves your machine through X Auto.
         </p>
       </div>
       <IxConnectionPanel />
       <ProviderManager kind="ixbrowser" addLabel="Add IX Browser connection" />
       <Notice title="Setting up the Local API">
         In IX Browser, enable the Local API (API settings) and note its port — the default address is http://127.0.0.1:53200. The Local
-        API needs no key: access is controlled by enabling it in IX Browser. Axora Relay uses only the documented V2 actions for listing,
+        API needs no key: access is controlled by enabling it in IX Browser. X Auto uses only the documented V2 actions for listing,
         opening and closing profiles; it never reads cookies or saved passwords.
       </Notice>
     </>

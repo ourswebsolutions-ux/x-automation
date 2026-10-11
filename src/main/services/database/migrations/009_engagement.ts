@@ -7,7 +7,7 @@ import type { Migration } from './index'
  *   records: deleting one never touches the post on X.
  * - engagement_tasks: a checklist of things a person intends to do with a post
  *   from one of their accounts (reply, like, repost, quote, bookmark, follow
- *   up). Axora Relay never performs these on X by itself. At most one open
+ *   up). X Auto never performs these on X by itself. At most one open
  *   task per post, account and kind (partial unique index).
  */
 export const m009Engagement: Migration = {

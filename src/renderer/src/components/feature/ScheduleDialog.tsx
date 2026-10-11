@@ -187,8 +187,8 @@ export function ScheduleDialog({ open, mode, draftId, accountId: initialAccount,
       title={title}
       description={
         mode === 'publish-now'
-          ? 'Axora Relay opens the account’s IX Browser profile and posts this to X as soon as the queue reaches it.'
-          : 'When the time comes, Axora Relay opens the account’s IX Browser profile and posts it to X. The app needs to be running.'
+          ? 'X Auto opens the account’s IX Browser profile and posts this to X as soon as the queue reaches it.'
+          : 'When the time comes, X Auto opens the account’s IX Browser profile and posts it to X. The app needs to be running.'
       }
       footer={
         <>

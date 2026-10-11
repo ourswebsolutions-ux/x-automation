@@ -288,7 +288,7 @@ check('… verified by profile check, one submission only', t5?.status === 'succ
 await fxSet('silent-missing')
 const postsBefore5b = (await fxPosts()).length
 const run5b = await page.evaluate((c) => window.relay.runs.start(c), baseConfig({ name: 'Missing run', targets: { scope: 'selected', profileIds: [prof(2).id] } }))
-check('not found on the profile → needs review (not retried)', await waitFor(async () => (await details(run5b.id)).items[0]?.scheduleStatus === 'needs-review', 150000), JSON.stringify((await details(run5b.id)).items.map((i) => i.scheduleStatus)))
+check('not found on the profile → needs review (not retried)', await waitFor(async () => (await details(run5b.id)).items[0]?.scheduleStatus === 'needs-review', 150000), JSON.stringify(await page.evaluate((d) => window.relay.queue.list({ view: 'all' }).then((ts) => ts.filter((t) => t.draftId === d).map((t) => ({ status: t.status, attempts: t.attempts, error: t.error, stage: t.stage, runAfter: t.runAfter, held: t.held }))), (await details(run5b.id)).items[0]?.draftId)))
 check('“Publishing outcome needs review” notice', await toastShown('Publishing outcome needs review'))
 await sleep(3000)
 check('… exactly one submission', (await fxPosts()).length - postsBefore5b === 1)

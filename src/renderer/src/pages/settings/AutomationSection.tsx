@@ -15,8 +15,8 @@ const STATE: Record<EngineState, { label: string; tone: Tone; detail: string }> 
   ready: { label: 'Running', tone: 'success', detail: 'Ready for browser tasks.' },
   stopping: { label: 'Stopping', tone: 'neutral', detail: 'Shutting down cleanly…' },
   crashed: { label: 'Restarting when needed', tone: 'warning', detail: 'It stopped unexpectedly and will start again for the next task.' },
-  failed: { label: 'Stopped', tone: 'danger', detail: 'It stopped repeatedly and won’t restart by itself. Choose Restart. If this keeps happening, reinstall Axora Relay.' },
-  unavailable: { label: 'Not installed', tone: 'danger', detail: 'Part of this installation is missing. Reinstall Axora Relay.' }
+  failed: { label: 'Stopped', tone: 'danger', detail: 'It stopped repeatedly and won’t restart by itself. Choose Restart. If this keeps happening, reinstall X Auto.' },
+  unavailable: { label: 'Not installed', tone: 'danger', detail: 'Part of this installation is missing. Reinstall X Auto.' }
 }
 
 /** Settings → Automation: the engine's state in plain words, then publishing and engagement preferences. */
@@ -36,7 +36,7 @@ export function AutomationSection() {
       await run()
       if (success) toast({ tone: 'success', title: success })
     } catch {
-      toast({ tone: 'danger', title: 'The automation engine could not start', description: 'Try Restart. If it keeps failing, reinstall Axora Relay.', duration: 9000 })
+      toast({ tone: 'danger', title: 'The automation engine could not start', description: 'Try Restart. If it keeps failing, reinstall X Auto.', duration: 9000 })
     } finally {
       setBusy(null)
       status.reload()
@@ -48,7 +48,7 @@ export function AutomationSection() {
       <div className="flex flex-col gap-1">
         <h2 className="text-base font-medium text-fg">Automation</h2>
         <p className="text-sm text-fg-subtle text-pretty">
-          Publishing runs in a built-in automation engine that Axora Relay starts and stops by itself — there is nothing to install or run separately. It works in the
+          Publishing runs in a built-in automation engine that X Auto starts and stops by itself — there is nothing to install or run separately. It works in the
           browser IX Browser opens for each profile.
         </p>
       </div>
@@ -89,7 +89,7 @@ export function AutomationSection() {
         <Notice tone={selfCheck.ok ? 'neutral' : 'warning'} icon={selfCheck.ok ? CircleCheck : CircleX} title={selfCheck.ok ? 'The automation engine works' : 'The automation engine could not start'}>
           {selfCheck.ok
             ? `Checked ${formatRelative(selfCheck.checkedAt)}. To check a specific browser profile, use “Check automation compatibility” on it in Accounts & Profiles.`
-            : 'Choose Restart and check again. If it keeps failing, reinstall Axora Relay.'}
+            : 'Choose Restart and check again. If it keeps failing, reinstall X Auto.'}
         </Notice>
       )}
 

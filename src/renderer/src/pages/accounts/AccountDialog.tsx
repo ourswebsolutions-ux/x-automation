@@ -164,7 +164,7 @@ export function AccountDialog({ open, account, initialProfileId = null, profiles
           <span className="flex flex-col gap-0.5">
             <span className={trimmedHandle ? 'text-sm text-fg' : 'text-sm text-fg-subtle'}>I confirm this is the X account signed in to this profile</span>
             <span className="text-xs text-fg-subtle">
-              Axora Relay can’t check this with X. Without confirmation the username is shown as “Not verified”.
+              X Auto can’t check this with X. Without confirmation the username is shown as “Not verified”.
               {handleChanged && account?.identity === 'confirmed' && ' Changing the username clears the earlier confirmation.'}
             </span>
           </span>

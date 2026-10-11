@@ -110,7 +110,7 @@ export function UserMenu({ collapsed }: { collapsed: boolean }) {
           </MenuItem>
           <MenuSeparator />
           <MenuItem icon={Info} onSelect={() => go(settingsPath('security'))}>
-            About Axora Relay
+            About X Auto
           </MenuItem>
         </MenuList>
       </Popover>

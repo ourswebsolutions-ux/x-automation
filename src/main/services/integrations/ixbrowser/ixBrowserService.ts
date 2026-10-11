@@ -80,7 +80,7 @@ export class IxBrowserService {
   }
 
   /**
-   * The debugging address IX Browser returned when Axora Relay opened this
+   * The debugging address IX Browser returned when X Auto opened this
    * profile through the Local API (null if it was opened elsewhere, closed,
    * or IX Browser did not return one).
    */
@@ -337,7 +337,7 @@ export class IxBrowserService {
       throw new IxBrowserError('busy', `This profile is already being ${inFlight === 'open' ? 'opened' : 'closed'}.`, 'Wait for the current request to finish.')
     }
     if (operation === 'open' && profile.runState === 'running') {
-      throw new IxBrowserError('busy', 'This profile is already open.', 'Refresh status if the window was closed outside Axora Relay.')
+      throw new IxBrowserError('busy', 'This profile is already open.', 'Refresh status if the window was closed outside X Auto.')
     }
 
     this.pending.set(externalId, operation)

@@ -344,7 +344,7 @@ export interface RelayApi {
     /** Opens a save dialog; all links, or only `ids`. */
     export(ids?: Id[]): Promise<LinkExportResult>
   }
-  /** Engagement tasks — a checklist. Axora Relay never likes, reposts, replies or follows by itself. */
+  /** Engagement tasks — a checklist. X Auto never likes, reposts, replies or follows by itself. */
   engagement: {
     list(query: EngagementQuery): Promise<EngagementTaskView[]>
     counts(): Promise<{ open: number; overdue: number }>

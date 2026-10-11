@@ -16,7 +16,7 @@
   `connect_over_cdp`, opens one tab in the profile's own browser context (its signed-in session —
   no cookies are read or copied), opens `https://x.com/compose/post`, types the post, attaches
   images, clicks **Post** once, and waits for the post link X shows afterwards. The tab is closed;
-  the profile is closed again if Axora Relay opened it (setting).
+  the profile is closed again if X Auto opened it (setting).
 - **Post links**: every confirmed post is saved with its X post id and handle.
 - **Notifications**: published, failed, needs attention, missed, reminders — plain language, in
   the notification centre and (if enabled per event type) as desktop notifications. A continuing

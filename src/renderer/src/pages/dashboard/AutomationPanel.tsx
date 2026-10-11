@@ -87,7 +87,7 @@ export function AutomationPanel() {
           </>
         ) : (
           <>
-            <p className="text-sm text-fg-muted">Describe the posts you want, choose profiles, and start once — Axora Relay writes, illustrates and publishes them.</p>
+            <p className="text-sm text-fg-muted">Describe the posts you want, choose profiles, and start once — X Auto writes, illustrates and publishes them.</p>
             <div className="flex flex-wrap gap-2">
               <Button size="sm" variant="primary" icon={Workflow} onClick={() => navigate('/automation')}>
                 Create automation

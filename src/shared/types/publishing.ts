@@ -11,7 +11,7 @@ export interface PublishingSettings {
   missedGraceMinutes: number
   /** Remind this many minutes before a scheduled post goes out. 0 = no reminder. */
   reminderMinutes: number
-  /** Close the profile after publishing — only when Axora Relay opened it. */
+  /** Close the profile after publishing — only when X Auto opened it. */
   closeProfileAfterPublish: boolean
   /**
    * Attempts for failures that happened before anything was submitted

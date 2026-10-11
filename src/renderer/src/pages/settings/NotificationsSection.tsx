@@ -28,7 +28,7 @@ export function NotificationsSection() {
   return (
     <SettingsSection
       title="Notifications"
-      description="Choose where each kind of event appears. Desktop alerts appear while Axora Relay is running."
+      description="Choose where each kind of event appears. Desktop alerts appear while X Auto is running."
     >
       <div className="flex items-center gap-4 px-4 py-2 text-2xs font-medium uppercase tracking-[0.06em] text-fg-faint">
         <span className="flex-1">Event</span>

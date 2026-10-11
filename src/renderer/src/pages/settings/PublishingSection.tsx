@@ -68,7 +68,7 @@ export function PublishingSection() {
 
   return (
     <div className="flex flex-col gap-8">
-      <SettingsSection title="Publishing" description="How scheduled posts go out. Axora Relay publishes only while it is running.">
+      <SettingsSection title="Publishing" description="How scheduled posts go out. X Auto publishes only while it is running.">
         <SettingsRow
           label="Space posts from one account"
           htmlFor="publishing-spacingMinutes"
@@ -102,12 +102,12 @@ export function PublishingSection() {
         <SettingsRow
           label="Close the profile after publishing"
           htmlFor="publishing-close"
-          description="Only profiles Axora Relay opened for the post are closed. Profiles you opened stay open."
+          description="Only profiles X Auto opened for the post are closed. Profiles you opened stay open."
           control={<Switch id="publishing-close" checked={s.closeProfileAfterPublish} onChange={(checked) => void save({ closeProfileAfterPublish: checked })} aria-label="Close the profile after publishing" />}
         />
       </SettingsSection>
 
-      <SettingsSection title="Engagement tasks" description="Engagement tasks are reminders you act on yourself. Axora Relay never likes, reposts, replies or follows on its own.">
+      <SettingsSection title="Engagement tasks" description="Engagement tasks are reminders you act on yourself. X Auto never likes, reposts, replies or follows on its own.">
         <SettingsRow
           label="Daily guideline per account"
           htmlFor="engagement-daily"

@@ -1,5 +1,7 @@
 import { app, BrowserWindow, dialog, nativeTheme, powerMonitor, protocol } from 'electron'
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { IpcEvent } from '@shared/ipc/channels'
 import type { Preferences } from '@shared/types/preferences'
 import { registerIpcHandlers, windowState } from './ipc/registerHandlers'
@@ -12,6 +14,14 @@ const PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000
 
 let mainWindow: BrowserWindow | null = null
 let services: AppServices | null = null
+
+// The app was called "Axora Relay" before it became "X Auto". An existing installation keeps
+// its data folder (database, images, vault) instead of starting empty under the new name.
+// Electron may already have created the new folder, so the database file decides.
+// Must run before anything touches userData (the single-instance lock does).
+const LEGACY_USER_DATA = join(app.getPath('appData'), 'Axora Relay')
+const databaseIn = (dir: string) => join(dir, 'data', 'relay.db')
+if (!existsSync(databaseIn(app.getPath('userData'))) && existsSync(databaseIn(LEGACY_USER_DATA))) app.setPath('userData', LEGACY_USER_DATA)
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -65,7 +75,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   void app.whenReady().then(bootstrap).catch((error: unknown) => {
-    dialog.showErrorBox('Axora Relay could not start', error instanceof Error ? error.message : String(error))
+    dialog.showErrorBox('X Auto could not start', error instanceof Error ? error.message : String(error))
     app.exit(1)
   })
 }

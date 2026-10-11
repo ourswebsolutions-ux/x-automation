@@ -181,7 +181,7 @@ export function ProxiesView() {
     <div className="flex flex-col gap-4">
       <Notice icon={Shield} title="How proxies are applied">
         A proxy is applied to an IX Browser profile through IX Browser’s own custom-proxy setting, while the profile is closed. Passwords are encrypted on this
-        device and sent only to IX Browser on this computer. Axora Relay never rotates proxies by itself.
+        device and sent only to IX Browser on this computer. X Auto never rotates proxies by itself.
       </Notice>
 
       <div className="grid grid-cols-1 gap-4 @5xl:grid-cols-[minmax(0,1fr)_340px]">

@@ -103,7 +103,7 @@ export function EngagementDialog({ open, linkIds = [], task, accounts, onClose }
       onClose={onClose}
       dismissible={!saving}
       title={editing ? 'Edit task' : linkIds.length > 1 ? `Plan a task for ${linkIds.length} posts` : 'Plan a task'}
-      description="A reminder of something you will do yourself. Axora Relay never likes, reposts, replies or follows on its own."
+      description="A reminder of something you will do yourself. X Auto never likes, reposts, replies or follows on its own."
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={saving}>

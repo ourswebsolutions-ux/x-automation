@@ -18,7 +18,7 @@ from .protocol import EngineError, require_int, require_str, validate_endpoint
 Handler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
 # A controlled page for the self-test: no network, no scripts from elsewhere.
-TEST_PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Axora Relay automation self-test</title></head>
+TEST_PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>X Auto automation self-test</title></head>
 <body><h1>Automation self-test</h1><label>Name <input id="name"></label>
 <button id="go" onclick="document.getElementById('out').textContent='Hello, '+document.getElementById('name').value">Go</button>
 <p id="out"></p></body></html>"""
@@ -152,7 +152,7 @@ class Engine:
                 data_url = "data:text/html;base64," + base64.b64encode(TEST_PAGE.encode("utf-8")).decode("ascii")
                 await page.goto(data_url, wait_until="load")
                 title = await page.title()
-                if title != "Axora Relay automation self-test":
+                if title != "X Auto automation self-test":
                     raise EngineError("TEST_FAILED", "The test page did not load as expected.")
                 step("navigate", t, title=title)
                 token = secrets.token_hex(4)

@@ -10,7 +10,7 @@
  *  - X Help Center, "About X Premium": subscribers can write longer posts of up
  *    to 25,000 characters. https://help.x.com/using-x/x-premium
  *
- * Axora Relay cannot see whether an account has X Premium, so the profile is
+ * X Auto cannot see whether an account has X Premium, so the profile is
  * the user's choice and the editor says so.
  */
 export type LengthProfileId = 'standard' | 'premium'

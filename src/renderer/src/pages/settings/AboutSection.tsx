@@ -23,7 +23,7 @@ export function AboutSection() {
       <div className="flex items-center gap-4 px-4 py-5">
         <BrandMark size={44} />
         <div className="flex flex-col">
-          <span className="text-lg font-semibold tracking-[-0.01em] text-fg">Axora Relay</span>
+          <span className="text-lg font-semibold tracking-[-0.01em] text-fg">X Auto</span>
           <span className="text-sm text-fg-subtle">Desktop workspace for X accounts, drafts and automation.</span>
         </div>
       </div>

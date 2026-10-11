@@ -33,7 +33,7 @@ interface ActiveTask {
 
 const DEFAULT_BACKOFF = [60_000, 5 * 60_000, 15 * 60_000]
 const PAUSED_KEY = 'automation.paused'
-const INTERRUPTED_MESSAGE = 'Axora Relay closed while this was running, so its outcome is unknown. Check X before trying again.'
+const INTERRUPTED_MESSAGE = 'X Auto closed while this was running, so its outcome is unknown. Check X before trying again.'
 
 /**
  * Persistent task queue. Tasks live in SQLite and survive restarts. A task is
@@ -280,7 +280,7 @@ export class QueueService {
       this.deps.log.warn(`Task ${task.id.slice(0, 8)} was interrupted by a shutdown; marked for review`, { kind: task.kind })
       this.afterSettle(task, settlement)
     }
-    this.deps.repo.closeOpenRuns('uncertain', 'Interrupted when Axora Relay closed.', now)
+    this.deps.repo.closeOpenRuns('uncertain', 'Interrupted when X Auto closed.', now)
   }
 
   private tick(): void {

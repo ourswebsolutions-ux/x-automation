@@ -35,7 +35,7 @@ export function TitleBar({ collapsed, onToggleSidebar }: TitleBarProps) {
         {!collapsed && (
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <BrandMark />
-            <span className="truncate text-sm font-semibold tracking-[-0.01em] text-fg">Axora Relay</span>
+            <span className="truncate text-sm font-semibold tracking-[-0.01em] text-fg">X Auto</span>
           </div>
         )}
         <IconButton

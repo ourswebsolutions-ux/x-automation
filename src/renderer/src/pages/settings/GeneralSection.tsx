@@ -34,7 +34,7 @@ export function GeneralSection() {
 
   return (
     <>
-      <SettingsSection title="Workspace" description="How Axora Relay opens and what it shows.">
+      <SettingsSection title="Workspace" description="How X Auto opens and what it shows.">
         <SettingsRow
           label="Start page"
           htmlFor="start-page"
@@ -59,13 +59,13 @@ export function GeneralSection() {
         />
       </SettingsSection>
 
-      <SettingsSection title="Startup" description="What happens when Axora Relay launches.">
+      <SettingsSection title="Startup" description="What happens when X Auto launches.">
         <SettingsRow
           label="Launch at sign-in"
           htmlFor="launch-at-login"
           description={
             loginSupported
-              ? 'Start Axora Relay when you sign in to your computer.'
+              ? 'Start X Auto when you sign in to your computer.'
               : 'Available in the installed app on Windows and macOS. The preference is saved and applied there.'
           }
           control={

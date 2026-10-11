@@ -82,14 +82,14 @@ const NOT_INCLUDED = [
 function plain(error: unknown, fallback: string): string {
   const code = (error as NodeJS.ErrnoException)?.code
   if (code === 'ENOSPC') return 'There is not enough free space for the backup.'
-  if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') return 'Axora Relay can’t write to that folder. Choose another one.'
+  if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') return 'X Auto can’t write to that folder. Choose another one.'
   if (code === 'ENOENT') return 'The backup folder is not available. Choose another one.'
   if (error instanceof ArchiveError || error instanceof ValidationError || error instanceof ConflictError) return error.message
   return fallback
 }
 
 /**
- * Backup and restore of everything Axora Relay owns: the database (drafts,
+ * Backup and restore of everything X Auto owns: the database (drafts,
  * schedules, queue, links, accounts, usage history, settings, logs) and the
  * image library, in one verified file. A backup is only reported as done
  * after it was read back and every file matched its checksum. A restore only
@@ -108,7 +108,10 @@ export class BackupService {
 
   getSettings(): BackupSettings {
     const stored = this.deps.settings.get<Partial<BackupSettings>>(SETTINGS_KEY) ?? {}
-    return { ...DEFAULT_BACKUP_SETTINGS, folder: join(app.getPath('documents'), 'Axora Relay Backups'), ...stored }
+    // Backups made before the rename stay where they are (the old default folder), if it exists.
+    const legacy = join(app.getPath('documents'), 'Axora Relay Backups')
+    const folder = existsSync(legacy) ? legacy : join(app.getPath('documents'), 'X Auto Backups')
+    return { ...DEFAULT_BACKUP_SETTINGS, folder, ...stored }
   }
 
   updateSettings(patch: Partial<Pick<BackupSettings, 'schedule' | 'keep'>>): BackupSettings {
@@ -281,7 +284,7 @@ export class BackupService {
       title: 'Choose a backup to restore',
       defaultPath: existsSync(this.getSettings().folder) ? this.getSettings().folder : app.getPath('documents'),
       filters: [
-        { name: 'Axora Relay backup', extensions: ['axrbackup', 'sqlite', 'db'] },
+        { name: 'X Auto backup', extensions: ['axrbackup', 'sqlite', 'db'] },
         { name: 'All files', extensions: ['*'] }
       ],
       properties: ['openFile' as const]
@@ -331,7 +334,7 @@ export class BackupService {
       } catch {
         throw new ArchiveError('The backup has no readable manifest.')
       }
-      if (parsed.format !== FORMAT || parsed.formatVersion !== FORMAT_VERSION) throw new ArchiveError('This is not an Axora Relay backup, or it needs a newer version of the app.')
+      if (parsed.format !== FORMAT || parsed.formatVersion !== FORMAT_VERSION) throw new ArchiveError('This is not an X Auto backup, or it needs a newer version of the app.')
       const actual = new Map(read.filter((f) => f.name !== 'manifest.json').map((f) => [f.name, f]))
       if (actual.size !== parsed.files.length || parsed.files.some((f) => actual.get(f.name)?.sha256 !== f.sha256 || actual.get(f.name)?.size !== f.size)) {
         throw new ArchiveError('The backup did not pass its integrity check — it may be damaged or incomplete.')
@@ -451,7 +454,7 @@ export class BackupService {
     try {
       await access(folder, constants.W_OK)
     } catch (error) {
-      throw new ValidationError(plain(error, 'Axora Relay can’t write to that folder. Choose another one.'))
+      throw new ValidationError(plain(error, 'X Auto can’t write to that folder. Choose another one.'))
     }
   }
 

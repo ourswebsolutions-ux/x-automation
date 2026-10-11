@@ -114,7 +114,7 @@ export function QueuePage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title={NAV_ITEMS.queue.label}
-        description="Every post Axora Relay publishes runs here, one account at a time."
+        description="Every post X Auto publishes runs here, one account at a time."
         meta={
           c && (
             <span className="flex items-center gap-2 text-xs text-fg-subtle">

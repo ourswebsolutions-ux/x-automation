@@ -106,7 +106,7 @@ export function SchedulesPage() {
         }
       />
       <p className="text-xs text-fg-subtle">
-        Each chosen day, Axora Relay starts one automation run and spreads its posts inside the daily hours (posts per profile = per day). Runs only start while Axora Relay is running — a day missed while it was
+        Each chosen day, X Auto starts one automation run and spreads its posts inside the daily hours (posts per profile = per day). Runs only start while X Auto is running — a day missed while it was
         closed is not made up later.
       </p>
 

@@ -262,7 +262,7 @@ export function ConfigForm({ config, onChange }: Props) {
         </p>
       </Section>
 
-      <Section step={3} title="Profiles" description="IX Browser profiles synced into Axora Relay.">
+      <Section step={3} title="Profiles" description="IX Browser profiles synced into X Auto.">
         <ProfileTargets value={targets} onChange={(t) => set({ targets: t })} publishing={publishing} />
       </Section>
 
@@ -271,7 +271,7 @@ export function ConfigForm({ config, onChange }: Props) {
         <Toggle label="Save drafts" description="Keep the generated posts as drafts (when not publishing)." checked={actions.saveDrafts} onChange={(saveDrafts) => setActions({ saveDrafts })} />
         <div className="flex flex-col gap-3 border-t border-line pt-3">
           <p className="text-xs text-fg-subtle">
-            Reposts, comments and likes are planned as tasks you complete in each profile — Axora Relay opens the post for you but doesn’t perform them. One of your accounts per post and action.
+            Reposts, comments and likes are planned as tasks you complete in each profile — X Auto opens the post for you but doesn’t perform them. One of your accounts per post and action.
           </p>
           <div className="flex flex-wrap gap-x-6 gap-y-2">
             <Toggle label="Repost" checked={actions.repost} onChange={(repost) => setActions({ repost })} />
@@ -402,7 +402,7 @@ export function ConfigForm({ config, onChange }: Props) {
             </span>
           )}
         </div>
-        <p className="text-xs text-fg-subtle">Posts go out while Axora Relay is running. Spacing between posts of one account and safe retries are set in Settings → Automation.</p>
+        <p className="text-xs text-fg-subtle">Posts go out while X Auto is running. Spacing between posts of one account and safe retries are set in Settings → Automation.</p>
       </Section>
 
       <Section step={6} title="When something goes wrong">

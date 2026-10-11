@@ -1,5 +1,5 @@
 /**
- * Axora Relay mark: two offset strokes forming a forward relay — a message
+ * X Auto mark: two offset strokes forming a forward relay — a message
  * handed from one point to the next.
  */
 export function BrandMark({ size = 20 }: { size?: number }) {

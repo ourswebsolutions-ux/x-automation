@@ -107,7 +107,7 @@ export class PublishHandler implements TaskHandler {
     let address = this.deps.ixBrowser.debuggingAddressFor(externalId)
     let openedHere = false
     if (!address && account.profile.runState === 'running') {
-      throw new TaskError('PROFILE_OPEN_ELSEWHERE', 'The profile is open in IX Browser but was not opened by Axora Relay. Close it there; the post will be retried.', 'retry')
+      throw new TaskError('PROFILE_OPEN_ELSEWHERE', 'The profile is open in IX Browser but was not opened by X Auto. Close it there; the post will be retried.', 'retry')
     }
     let lastStage = 'validate'
     try {

@@ -21,7 +21,7 @@ export function ProxySettingsSection() {
       <div className="flex flex-col gap-1">
         <h2 className="text-base font-medium text-fg">Proxies</h2>
         <p className="text-sm text-fg-subtle text-pretty">
-          Proxies are applied to IX Browser profiles through IX Browser’s own proxy setting. Passwords are encrypted on this computer. Axora Relay never switches
+          Proxies are applied to IX Browser profiles through IX Browser’s own proxy setting. Passwords are encrypted on this computer. X Auto never switches
           proxies by itself.
         </p>
       </div>

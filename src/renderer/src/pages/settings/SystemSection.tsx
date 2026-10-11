@@ -32,7 +32,7 @@ export function SystemSection() {
     <>
       {info.data?.recoveredFrom && (
         <Notice tone="warning" icon={TriangleAlert} title="A damaged data file was set aside at startup">
-          Axora Relay started with a fresh data file so it could open. To get your data back, restore a recent backup.{' '}
+          X Auto started with a fresh data file so it could open. To get your data back, restore a recent backup.{' '}
           <Button size="sm" variant="ghost" onClick={() => navigate('/settings?section=backup')}>
             Go to Backup & restore
           </Button>

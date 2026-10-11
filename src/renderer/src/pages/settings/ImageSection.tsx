@@ -116,7 +116,7 @@ export function ImageSection() {
         />
       </SettingsSection>
 
-      <SettingsSection title="Image library" description="Uploaded and generated images are stored on this device, in a folder Axora Relay manages. Only metadata is kept in the database.">
+      <SettingsSection title="Image library" description="Uploaded and generated images are stored on this device, in a folder X Auto manages. Only metadata is kept in the database.">
         <SettingsRow
           label="Storage location"
           description={<span data-selectable className="font-mono text-2xs">{stats.data?.folder ?? '…'}</span>}

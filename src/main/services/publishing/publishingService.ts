@@ -123,7 +123,7 @@ export class PublishingService {
         if (!account.profile) add('not-linked', `${account.label} is not linked to an IX Browser profile.`)
         else if (account.profile.availability === 'unavailable') add('profile-unavailable', `IX Browser no longer reports the profile linked to ${account.label}.`)
         if (!account.handle || account.identity !== 'confirmed') {
-          add('handle-unknown', 'The X username for this account is not confirmed, so Axora Relay cannot check which account the profile is signed in to before posting.', false)
+          add('handle-unknown', 'The X username for this account is not confirmed, so X Auto cannot check which account the profile is signed in to before posting.', false)
         }
         if (runAt) {
           const spacing = this.getSettings().spacingMinutes * 60_000

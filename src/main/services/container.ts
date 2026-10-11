@@ -182,7 +182,7 @@ export async function createServices(): Promise<AppServices> {
 
   // Development runs from the repository; the installed app from its resources folder.
   const resourceRoot = app.isPackaged ? process.resourcesPath : app.getAppPath()
-  const runtimeDir = app.isPackaged ? join(resourceRoot, 'engine-runtime') : join(resourceRoot, 'engine-runtime', process.platform === 'win32' ? 'win' : 'linux')
+  const runtimeDir = app.isPackaged ? join(resourceRoot, 'engine-runtime') : join(resourceRoot, 'engine-runtime', process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux')
   // Development/test only: AXORA_TEST_X_BASE_URL points publishing at a loopback stand-in for x.com.
   const testBaseUrl = !app.isPackaged && process.env.AXORA_TEST_X_BASE_URL ? process.env.AXORA_TEST_X_BASE_URL : null
   const engine = new EngineService({

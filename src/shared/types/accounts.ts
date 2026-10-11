@@ -6,7 +6,7 @@ import type { ProfileAvailability, ProfileRunState } from './ixbrowser'
  * it may be linked to one synchronised IX Browser profile.
  *
  * Nothing here is read from X. The username is whatever the user entered, and
- * `identity` says how far it is trusted — Axora Relay has no supported way to
+ * `identity` says how far it is trusted — X Auto has no supported way to
  * verify an X identity yet, so the strongest state is "confirmed by you".
  */
 

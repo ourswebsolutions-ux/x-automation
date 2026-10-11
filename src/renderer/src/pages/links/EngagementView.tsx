@@ -77,7 +77,7 @@ export function EngagementView({ accounts }: { accounts: Account[] }) {
   return (
     <div className="flex flex-col gap-4">
       <Notice icon={ShieldCheck} title="You do the engaging">
-        Axora Relay never likes, reposts, quotes, replies or follows on its own. A task opens the post in the account’s own profile; you act there and mark it done. Liking or
+        X Auto never likes, reposts, quotes, replies or follows on its own. A task opens the post in the account’s own profile; you act there and mark it done. Liking or
         reposting your own posts from your other accounts, or coordinating several accounts on the same post, isn’t allowed by X’s rules — so those tasks can’t be planned.
       </Notice>
       <Panel padded={false}>

@@ -194,12 +194,12 @@ export class DatabaseService {
       candidate = new DatabaseSync(path, { readOnly: true })
       const one = <T>(sql: string) => candidate!.prepare(sql).get() as T | undefined
       if (one<{ application_id: number }>('PRAGMA application_id')?.application_id !== APPLICATION_ID) {
-        return { ok: false, reason: 'This SQLite file was not created by Axora Relay.' }
+        return { ok: false, reason: 'This SQLite file was not created by X Auto.' }
       }
       const version = one<{ user_version: number }>('PRAGMA user_version')?.user_version ?? 0
       if (version < 1) return { ok: false, reason: 'The backup has no schema version.' }
       if (version > LATEST_SCHEMA_VERSION) {
-        return { ok: false, reason: `The backup uses schema v${version}, which needs a newer version of Axora Relay.` }
+        return { ok: false, reason: `The backup uses schema v${version}, which needs a newer version of X Auto.` }
       }
       const integrity = one<{ integrity_check: string }>('PRAGMA integrity_check')?.integrity_check
       if (integrity !== 'ok') return { ok: false, reason: 'The backup is corrupted (integrity check failed).' }

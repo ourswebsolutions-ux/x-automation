@@ -1,7 +1,7 @@
 # AI automation (Phase 12)
 
 The **Automation** page (Automate → Automation, or *Create automation* on the dashboard) turns one
-description into a run: Axora Relay writes the posts, optionally generates and attaches an image for
+description into a run: X Auto writes the posts, optionally generates and attaches an image for
 each, assigns them to IX Browser profiles, and publishes them through the profiles' own signed-in
 sessions. You confirm once, before the run starts.
 
@@ -123,7 +123,7 @@ On each chosen day inside the date range, it starts **one** run:
   - A post being published right now finishes.
 - **Restart**: an app closed mid-run resumes as *paused* (generation) or keeps waiting
   (approvals). Scheduled posts stay in the persistent queue.
-- **Posts only go out while Axora Relay is running.** Missed slots are handled as described in
+- **Posts only go out while X Auto is running.** Missed slots are handled as described in
   publishing.md.
 
 ## Engagement
@@ -136,7 +136,7 @@ Reposts, comments and likes are **planned as tasks you complete yourself** in th
 - The existing guardrails against self-amplification, coordinated and duplicate engagement and the
   daily limit apply.
 
-Axora Relay does not like, repost or reply automatically. X's rules prohibit artificial or
+X Auto does not like, repost or reply automatically. X's rules prohibit artificial or
 coordinated engagement, and automated replies can't be made genuinely original for posts the app
 hasn't read.
 

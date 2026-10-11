@@ -1,5 +1,5 @@
 appId: com.axoraweb.relay
-productName: Axora Relay
+productName: X Auto
 copyright: Copyright © 2026 AxoraWeb
 directories:
   output: release/${version}
@@ -17,18 +17,51 @@ extraResources:
     filter: ['**/*', '!tests/**', '!**/__pycache__/**', '!**/*.pyc']
   - from: engine-runtime/${os}
     to: engine-runtime
+# Artifacts: release/<version>/X-Auto-<version>-<os>-<arch>.<ext> (Windows: …-Setup-…-x64.exe).
 win:
   target:
     - target: nsis
       arch: [x64]
   icon: build/icon.png
-  artifactName: ${productName}-Setup-${version}.${ext}
+  artifactName: X-Auto-Setup-${version}-x64.${ext}
+# One logo everywhere: build/icon.png (1024×1024, rendered from build/icon.svg, the same mark as the
+# in-app BrandMark). electron-builder derives the Windows .ico, the macOS .icns and the Linux icon set.
 nsis:
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
-  shortcutName: Axora Relay
+  shortcutName: X Auto
 linux:
-  target: [dir]
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
   icon: build/icon.png
+  category: Network
+  executableName: x-auto
+  artifactName: X-Auto-${version}-linux-${arch}.${ext}
+  maintainer: AxoraWeb <axoraweb.services@gmail.com>
+  synopsis: Desktop workspace for X accounts, drafts, scheduling and automation
+deb:
+  packageName: x-auto
+# The bundled Python runtime is built for one architecture (scripts/prepare-engine.mjs --arch),
+# so the mac app is built for that same architecture: arm64 by default (Apple silicon).
+# Unsigned unless a Developer ID certificate is provided (CSC_LINK / CSC_KEY_PASSWORD).
+mac:
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  icon: build/icon.png
+  category: public.app-category.productivity
+  artifactName: X-Auto-${version}-mac-${arch}.${ext}
+  hardenedRuntime: false
+  gatekeeperAssess: false
+dmg:
+  artifactName: X-Auto-${version}-mac-${arch}.${ext}

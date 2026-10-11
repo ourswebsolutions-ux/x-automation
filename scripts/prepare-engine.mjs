@@ -2,7 +2,10 @@
 /**
  * Prepares the bundled Python runtime for the automation engine.
  *
- *   node scripts/prepare-engine.mjs --platform=linux|win
+ *   node scripts/prepare-engine.mjs --platform=linux|win|mac [--arch=x64|arm64]
+ *
+ * macOS: the runtime matches one architecture (default: this machine's), so build the
+ * mac app for that same architecture (electron-builder --mac --arm64 or --x64).
  *
  * 1. Downloads the pinned python-build-standalone CPython and verifies its SHA-256.
  * 2. Extracts it to engine-runtime/<platform>/python.
@@ -25,13 +28,17 @@ const RELEASE = '20260924'
 const VERSION = '3.12.14'
 const RUNTIMES = {
   win: { asset: `cpython-${VERSION}+${RELEASE}-x86_64-pc-windows-msvc-install_only.tar.gz`, sha256: 'c5303174bc29f5205decf6721ac549d4eb41c448f9b8c46cbc562d00348865bb', sitePackages: 'Lib/site-packages', pipPlatform: ['win_amd64'] },
+  'mac-arm64': { asset: `cpython-${VERSION}+${RELEASE}-aarch64-apple-darwin-install_only.tar.gz`, sha256: '9763f43db2481a6af36af82ec40302aab7a73632f880129d07a6e81aec846277', sitePackages: 'lib/python3.12/site-packages', pipPlatform: ['macosx_11_0_arm64', 'macosx_11_0_universal2'] },
+  'mac-x64': { asset: `cpython-${VERSION}+${RELEASE}-x86_64-apple-darwin-install_only.tar.gz`, sha256: '0d6a4a299908123f00bc844df737603f047ff9eba14fda6cad83f3cf3cb3a2af', sitePackages: 'lib/python3.12/site-packages', pipPlatform: ['macosx_10_13_x86_64', 'macosx_11_0_universal2'] },
   linux: { asset: `cpython-${VERSION}+${RELEASE}-x86_64-unknown-linux-gnu-install_only.tar.gz`, sha256: '5eae8cf79dd47fc2496a4fccc892936be831ce7a84d984b2299dfb1cdb592682', sitePackages: 'lib/python3.12/site-packages', pipPlatform: ['manylinux_2_28_x86_64', 'manylinux_2_17_x86_64', 'manylinux2014_x86_64', 'manylinux1_x86_64'] }
 }
 
-const arg = process.argv.find((a) => a.startsWith('--platform='))?.split('=')[1] ?? (process.platform === 'win32' ? 'win' : 'linux')
-const spec = RUNTIMES[arg]
+const arg = process.argv.find((a) => a.startsWith('--platform='))?.split('=')[1] ?? (process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux')
+const arch = process.argv.find((a) => a.startsWith('--arch='))?.split('=')[1] ?? (process.arch === 'arm64' ? 'arm64' : 'x64')
+// engine-runtime/<os> matches electron-builder's ${os} (win, linux, mac).
+const spec = RUNTIMES[arg === 'mac' ? `mac-${arch}` : arg]
 if (!spec) {
-  console.error(`Unsupported platform "${arg}". Use --platform=win or --platform=linux.`)
+  console.error(`Unsupported platform "${arg}" (arch ${arch}). Use --platform=win, --platform=linux or --platform=mac [--arch=arm64|x64].`)
   process.exit(1)
 }
 

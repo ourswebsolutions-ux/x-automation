@@ -153,7 +153,7 @@ export function ProfilesView() {
           title="Connect IX Browser to see your profiles"
           description={
             <>
-              Axora Relay reads your browser profiles through IX Browser’s Local API. Open IX Browser, enable the Local API in its settings,
+              X Auto reads your browser profiles through IX Browser’s Local API. Open IX Browser, enable the Local API in its settings,
               then add the connection here. No profiles are shown until a real connection succeeds.
             </>
           }

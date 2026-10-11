@@ -106,7 +106,7 @@ step.
 - `profile-open` returns `debugging_address` (the SDK's own example passes it to Selenium as
   `debuggerAddress`). The engine uses it with Playwright's `connect_over_cdp`.
 - `profile-opened-list` does not document a debugging address. A profile opened outside
-  Axora Relay (or before the app started) therefore has no known address: the compatibility
+  X Auto (or before the app started) therefore has no known address: the compatibility
   check reports this as a blocker instead of guessing ports.
 - `profile-update-proxy-for-custom-proxy` sets a custom proxy (`proxy_mode` 2). The docs do not
   say a running profile picks the change up, so the app only applies proxies to closed profiles

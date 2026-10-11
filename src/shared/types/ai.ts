@@ -7,7 +7,7 @@ export type AiErrorKind =
   | 'blocked-endpoint' // endpoint resolves to a private or internal address
   | 'auth' // invalid or revoked key, or no permission
   | 'quota' // billing quota exhausted
-  | 'usage-limit' // a usage limit set in Axora Relay was reached
+  | 'usage-limit' // a usage limit set in X Auto was reached
   | 'rate-limit' // too many requests — try later
   | 'model' // model does not exist or is not available to this key
   | 'invalid-request' // the provider rejected a parameter

@@ -67,7 +67,7 @@ export function UsageSection() {
       <div className="flex flex-col gap-1">
         <h2 className="text-base font-medium text-fg">Usage & costs</h2>
         <p className="text-sm text-fg-subtle text-pretty">
-          Every AI request Axora Relay made. Requests, tokens and images are exactly what providers reported. Providers don’t include prices in their responses, so any cost
+          Every AI request X Auto made. Requests, tokens and images are exactly what providers reported. Providers don’t include prices in their responses, so any cost
           here is an estimate from rates you enter below.
         </p>
       </div>

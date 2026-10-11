@@ -52,7 +52,7 @@ export function ReviewDialog({ task, onClose }: ReviewDialogProps) {
       onClose={onClose}
       dismissible={!saving}
       title="Did this post go out?"
-      description="Axora Relay submitted the post but could not confirm it, so it was not retried. Check the account on X and tell us what you found."
+      description="X Auto submitted the post but could not confirm it, so it was not retried. Check the account on X and tell us what you found."
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={saving}>

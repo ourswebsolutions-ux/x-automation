@@ -203,7 +203,7 @@ export function LinksView({ links, loading, accounts, knownTags, onAdd }: LinksV
       <ConfirmDialog
         open={Boolean(confirmDelete)}
         title={confirmDelete && confirmDelete.length > 1 ? `Remove ${confirmDelete.length} links?` : 'Remove this link?'}
-        description="Only the record in Axora Relay is removed, with its engagement tasks. The post on X is not affected."
+        description="Only the record in X Auto is removed, with its engagement tasks. The post on X is not affected."
         confirmLabel="Remove"
         tone="danger"
         onCancel={() => setConfirmDelete(null)}

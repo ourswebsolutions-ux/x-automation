@@ -154,7 +154,7 @@ check('list + counts', eng.list({ status: 'open' }).length >= 5 && eng.counts().
 const opened = await eng.openInProfile(brandReply.id)
 check('open in profile: opens the profile via IX, then x.openPost with the post URL', !opened.signedOut && ix.opened.includes(102) && engineCalls.at(-1)?.cmd === 'x.openPost' && engineCalls.at(-1)?.url === 'https://x.com/brand_main/status/1001')
 const busyTask = eng.create({ linkIds: [otherPost], accountId: C, kind: 'reply', ...base }).created[0]!
-check('open in profile: profile open elsewhere → clear message, nothing opened', (await errOfAsync(eng.openInProfile(busyTask.id))).includes('not opened by Axora Relay'))
+check('open in profile: profile open elsewhere → clear message, nothing opened', (await errOfAsync(eng.openInProfile(busyTask.id))).includes('not opened by X Auto'))
 const followUp = eng.create({ linkIds: [otherPost], accountId: null, kind: 'follow-up', ...base }).created[0]!
 check('open in profile: needs an account', (await errOfAsync(eng.openInProfile(followUp.id))).includes('no account'))
 engineFail = 'CONNECT_FAILED'

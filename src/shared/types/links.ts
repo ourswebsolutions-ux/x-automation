@@ -45,7 +45,7 @@ export interface LinkExportResult {
 
 /**
  * Things a person plans to do with a post from one of their accounts.
- * Axora Relay never performs them on X — it can open the post in the
+ * X Auto never performs them on X — it can open the post in the
  * account's profile, and the person does the rest.
  */
 export type EngagementKind = 'reply' | 'like' | 'repost' | 'quote' | 'bookmark' | 'follow-up' | 'other'

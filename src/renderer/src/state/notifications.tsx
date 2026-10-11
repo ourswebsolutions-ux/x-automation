@@ -50,7 +50,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
           make({
             tone: 'info',
             title: `Phase ${CURRENT_PHASE}: AI automation`,
-            body: 'Describe the posts you want, choose profiles and start once — Axora Relay writes, illustrates, schedules and publishes them, or waits for your approval.',
+            body: 'Describe the posts you want, choose profiles and start once — X Auto writes, illustrates, schedules and publishes them, or waits for your approval.',
             to: '/automation'
           })
         ]

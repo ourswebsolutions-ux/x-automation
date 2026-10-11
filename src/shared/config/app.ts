@@ -1,7 +1,7 @@
 import type { Preferences } from '../types/preferences'
 import { CURRENT_PHASE } from './roadmap'
 
-export const APP_NAME = 'Axora Relay'
+export const APP_NAME = 'X Auto'
 export const APP_PHASE = CURRENT_PHASE
 
 export const DEFAULT_IXBROWSER_ENDPOINT = 'http://127.0.0.1:53200'

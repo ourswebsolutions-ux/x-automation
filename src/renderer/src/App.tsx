@@ -68,7 +68,7 @@ export function App() {
       <div className="grid h-full place-items-center bg-canvas">
         <ErrorState
           title="Desktop bridge unavailable"
-          error="This interface must run inside the Axora Relay desktop app. Start it with “npm run dev”."
+          error="This interface must run inside the X Auto desktop app. Start it with “npm run dev”."
         />
       </div>
     )

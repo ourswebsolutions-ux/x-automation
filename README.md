@@ -1,4 +1,4 @@
-# Axora Relay
+# X Auto
 
 Windows desktop workspace for managing X accounts, drafts, scheduling and automation.
 Built with Electron, React, TypeScript, Vite (electron-vite) and Tailwind CSS.
@@ -64,9 +64,12 @@ scheduling are configurable but **not connected** yet, and the interface says so
 | `npm run typecheck` | Strict TypeScript checks (main/preload and renderer) |
 | `npm run build` | Typecheck, then build main, preload and renderer into `out/` |
 | `npm run preview` | Run the production build |
-| `npm run dist:win` | Build the Windows NSIS installer into `release/` (run on Windows) |
+| `npm run release -- 1.0.0` | Check, test, tag `v1.0.0` and push — GitHub Actions builds Linux, Windows and macOS and publishes the GitHub Release ([docs/release.md](docs/release.md)) |
+| `npm run dist:linux` | Build the Linux AppImage and .deb into `release/<version>/` |
+| `npm run dist:win` | Build the Windows NSIS installer into `release/<version>/` (run on Windows) |
+| `npm run dist:mac` | Build the macOS arm64 .dmg and .zip into `release/<version>/` (run on a Mac) |
 | `npm run dist:dir` | Build an unpacked app for the current OS (quick packaging check) |
-| `npm run engine:prepare -- --platform=win\|linux` | Download the pinned, checksum-verified Python runtime and install the hash-locked engine dependencies into `engine-runtime/<platform>/` (build machines only) |
+| `npm run engine:prepare -- --platform=win\|linux\|mac` | Download the pinned, checksum-verified Python runtime and install the hash-locked engine dependencies into `engine-runtime/<platform>/` (build machines only) |
 | `npm run engine:test` | Run the engine's Python tests with the bundled runtime (attaches to a real Chrome/Chromium for the CDP test when one is installed) |
 
 > If you launch from a shell that has `ELECTRON_RUN_AS_NODE=1` set (some editor
@@ -133,7 +136,7 @@ payload with zod, and returns an `IpcResult` envelope so errors arrive intact.
   runtime). No native module to compile for Windows. It is still flagged experimental in
   Node 24 (a warning is printed to the terminal); all access goes through
   `database/driver.ts`, so switching to `better-sqlite3` later touches one file.
-- **Location:** `<userData>/data/relay.db` (on Windows: `%APPDATA%\Axora Relay\data`).
+- **Location:** `<userData>/data/relay.db` (on Windows: `%APPDATA%\X Auto\data`).
   WAL journal, foreign keys enforced, unknown SQL parameters rejected.
 - **Migrations:** append-only list in `database/migrations/`. Each runs in a transaction
   with its bookkeeping row (`schema_migrations`, with a checksum) and `PRAGMA user_version`.
@@ -170,7 +173,7 @@ service) and `database/sqlite/profileRepository.ts`; schema changes in migration
 An account is a **local record** (label, optional X username, notes, a local
 "available for task assignment" flag) that can be linked to one synchronised profile.
 
-- **Identity is never guessed.** Axora Relay has no supported way to verify an X identity
+- **Identity is never guessed.** X Auto has no supported way to verify an X identity
   yet, and it does not read anything from browser profiles. A profile name is never used as
   a username. Usernames are `unknown`, `unverified` (entered) or `confirmed` (the user
   explicitly confirmed it — shown as "Confirmed by you", not "verified").
@@ -312,7 +315,7 @@ its own. Details and the selector caveat: [docs/publishing.md](docs/publishing.m
 ### Post links & engagement (Phase 9)
 
 Published posts are saved as links; more can be pasted or imported (TXT/CSV), tagged, noted and
-exported. Engagement tasks are a checklist the user acts on — Axora Relay never likes, reposts,
+exported. Engagement tasks are a checklist the user acts on — X Auto never likes, reposts,
 replies or follows by itself — with guardrails against self-amplification and coordinated
 engagement. [docs/engagement.md](docs/engagement.md).
 

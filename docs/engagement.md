@@ -2,7 +2,7 @@
 
 ## Post links
 
-- Every post Axora Relay publishes (and X confirms) is saved with its post id and handle.
+- Every post X Auto publishes (and X confirms) is saved with its post id and handle.
 - Links can also be **pasted** (one per line, or separated by spaces/commas) or **imported**
   from TXT (one link per line) or CSV (`url`, `account`, `tags`, `notes`, `published_at` —
   header row, any order). x.com and twitter.com links are accepted (with or without
@@ -17,7 +17,7 @@
 ## Engagement tasks — you do the engaging
 
 An engagement task is a reminder of something **you** will do with a post from one of your
-accounts: reply, like, repost, quote, bookmark, follow up, or anything else. Axora Relay never
+accounts: reply, like, repost, quote, bookmark, follow up, or anything else. X Auto never
 likes, reposts, quotes, replies or follows on its own.
 
 - **Open in profile** opens the post in a new tab of the account's own IX Browser profile (its

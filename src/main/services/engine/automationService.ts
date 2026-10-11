@@ -96,8 +96,8 @@ export class AutomationService {
 
       let address = this.deps.ixBrowser.debuggingAddressFor(profile.externalId)
       if (profile.runState === 'running' && !address) {
-        add('debugging-address', false, 'The profile is already open, but it was not opened by Axora Relay in this session, so its debugging address is unknown.')
-        result.blocker = 'This profile is open in IX Browser but wasn’t opened by Axora Relay. Close it there, then run the check again.'
+        add('debugging-address', false, 'The profile is already open, but it was not opened by X Auto in this session, so its debugging address is unknown.')
+        result.blocker = 'This profile is open in IX Browser but wasn’t opened by X Auto. Close it there, then run the check again.'
         return result
       }
       if (!address) {
@@ -167,7 +167,7 @@ export class AutomationService {
         add('connect', false, e.message)
         result.blocker =
           e.code === 'CONNECT_FAILED' || e.code === 'CONNECT_TIMEOUT'
-            ? 'Axora Relay could not connect to the profile’s browser. Check that IX Browser allows automation for this profile.'
+            ? 'X Auto could not connect to the profile’s browser. Check that IX Browser allows automation for this profile.'
             : e.code === 'NO_CONTEXT'
               ? 'The profile’s browser session was not available.'
               : 'The test in the profile’s browser did not complete.'

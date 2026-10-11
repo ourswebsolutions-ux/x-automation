@@ -11,14 +11,14 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const platformDir = process.platform === 'win32' ? 'win' : 'linux'
+const platformDir = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux'
 const python = join(root, 'engine-runtime', platformDir, 'python', process.platform === 'win32' ? 'python.exe' : 'bin/python3')
 if (!existsSync(python)) {
   console.error(`Bundled runtime not found at ${python}. Run: npm run engine:prepare`)
   process.exit(1)
 }
 
-const browsers = ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser', 'C:/Program Files/Google/Chrome/Application/chrome.exe']
+const browsers = ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser', 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
 const browserPath = browsers.find((b) => existsSync(b))
 const port = 9300 + Math.floor(Math.random() * 500)
 let browser = null

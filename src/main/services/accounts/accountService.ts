@@ -40,7 +40,7 @@ const short = (id: string) => id.slice(0, 8)
  * Local X account records and their links to IX Browser profiles.
  *
  * Everything here is local bookkeeping. No method contacts X, and enabling or
- * disabling an account only changes whether Axora Relay may assign it work.
+ * disabling an account only changes whether X Auto may assign it work.
  * Profile open/close goes through IxBrowserService — no API logic is duplicated.
  */
 export class AccountService {

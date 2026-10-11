@@ -136,7 +136,7 @@ export class Logger {
       format === 'json'
         ? JSON.stringify({ exportedAt: new Date().toISOString(), sanitized: true, entries: clean }, null, 2)
         : [
-            `# Axora Relay log export — ${new Date().toISOString()}`,
+            `# X Auto log export — ${new Date().toISOString()}`,
             '# Sanitized: credentials and tokens are redacted.',
             ...clean.map(
               (e) => `${e.at} ${e.level.toUpperCase().padEnd(7)} [${e.scope}] ${e.message}${e.meta ? ` ${JSON.stringify(e.meta)}` : ''}`

@@ -540,7 +540,7 @@ export function AccountsView() {
               <Panel title="Details">
                 <p className="text-sm text-fg-subtle">Select an account or profile to see its details and activity.</p>
                 <p className="mt-3 text-xs text-fg-faint">
-                  Usernames are only shown when you entered them. Axora Relay doesn’t read X identities from browser profiles.
+                  Usernames are only shown when you entered them. X Auto doesn’t read X identities from browser profiles.
                 </p>
               </Panel>
             )}

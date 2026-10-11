@@ -21,7 +21,7 @@ export const IDENTITY: Record<AccountIdentity, { label: string; tone: Tone; desc
   unverified: {
     label: 'Not verified',
     tone: 'warning',
-    description: 'Entered by you but not confirmed. Axora Relay has no way to check it against X.'
+    description: 'Entered by you but not confirmed. X Auto has no way to check it against X.'
   },
   confirmed: {
     label: 'Confirmed by you',
