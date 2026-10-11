@@ -277,7 +277,12 @@ async function assetBytes(repo, id, token, range) {
   })
   if (res.status !== 206 && res.status !== 200) throw new Error(`HTTP ${res.status}`)
   const buf = Buffer.from(await res.arrayBuffer())
-  return res.status === 200 ? (range.startsWith('-') ? buf.subarray(buf.length - Number(range.slice(1))) : buf.subarray(0, 64)) : buf
+  // A server that ignores Range sends the whole file: keep only the requested slice.
+  if (res.status === 200) {
+    const [from, to] = range.split('-').map(Number)
+    return buf.subarray(from, to + 1)
+  }
+  return buf
 }
 
 /**
@@ -310,7 +315,8 @@ export async function verifyRemoteRelease({ repo, version, token, localDir = nul
     if (!remote) continue
     try {
       const head = await assetBytes(repo, remote.id, token, '0-63')
-      const tail = a.kind === 'dmg' ? await assetBytes(repo, remote.id, token, '-512') : undefined
+      // Explicit start-end range: GitHub's download storage answers suffix ranges (bytes=-512) with 501.
+      const tail = a.kind === 'dmg' ? await assetBytes(repo, remote.id, token, `${remote.size - 512}-${remote.size - 1}`) : undefined
       const sig = signatureProblem(a.kind, head, tail)
       if (sig) problems.push(`${a.name} (downloaded): ${sig}`)
     } catch (error) {

@@ -389,6 +389,14 @@ async function followRun({ repo, version, tag, sha, event, after, startedAt }) {
   const view = await waitForRun(repo, runRef)
   if (view.conclusion !== 'success') {
     explainFailedRun(repo, { ...view, databaseId: runRef.databaseId })
+    // The publish job may have published before a later step failed: check what is really on GitHub.
+    const published = tryGh(['release', 'view', tag, '--repo', repo, '--json', 'isDraft'], { json: true })
+    if (published && !published.isDraft) {
+      warn('The workflow reported a failure, but the release is published — verifying it from here')
+      await verifyAndReport(repo, version)
+      console.log(`\n${paint(32, `X Auto ${tag} is released.`)} (the workflow's own final check failed; the release passed verification here)`)
+      return
+    }
     fail(
       `The release workflow ${view.conclusion} — no release was published (it is only published after every platform succeeds).`,
       `If it was a temporary problem: gh run rerun ${runRef.databaseId} --failed --repo ${repo}   then: npm run release -- ${version}\n  If the code needs a fix: commit it and release the next version (the tag ${tag} stays as it is).`

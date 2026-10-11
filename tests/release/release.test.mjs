@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import yaml from 'js-yaml'
-import { collectArtifacts, compareVersions, expectedAssets, mergeMacMetadata, prepareRelease, signatureProblem, updateChannel } from '../../scripts/release-assets.mjs'
+import { collectArtifacts, compareVersions, expectedAssets, mergeMacMetadata, prepareRelease, signatureProblem, updateChannel, verifyRemoteRelease } from '../../scripts/release-assets.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const results = []
@@ -165,6 +165,43 @@ rmSync(dir, { recursive: true, force: true })
   check('collect: the same filename from two builds is an error (no silent overwrite)', problems.some((p) => p.includes(`X-Auto-${v}-macos-arm64.zip was produced by both`)) && readFileSync(join(out, `X-Auto-${v}-macos-arm64.zip`), 'utf8') === 'arm', problems.join('; '))
   rmSync(parts, { recursive: true, force: true })
   rmSync(out, { recursive: true, force: true })
+}
+
+// ── remote verification against GitHub's download behaviour (no network: fetch is stubbed) ──
+{
+  const v2 = '1.0.2'
+  const exp2 = expectedAssets(v2)
+  const bodies = {}
+  for (const a of exp2.installers) {
+    const head = a.kind === 'exe' ? pad('MZ') : a.kind === 'zip' ? pad([0x50, 0x4b, 3, 4]) : a.kind === 'appimage' ? appimageHead : a.kind === 'deb' ? pad('!<arch>\n') : pad('x')
+    bodies[a.name] = a.kind === 'dmg' ? Buffer.concat([head, Buffer.alloc(2048), dmgTail]) : Buffer.concat([head, Buffer.alloc(2048)])
+  }
+  const meta = (names) => yaml.dump({ version: v2, files: names.map((n) => ({ url: n, sha512: 'x', size: bodies[n].length })) })
+  bodies['latest.yml'] = Buffer.from(meta([`X-Auto-${v2}-windows-x64-setup.exe`]))
+  bodies['latest-linux.yml'] = Buffer.from(meta([`X-Auto-${v2}-linux-x86_64.AppImage`, `X-Auto-${v2}-linux-amd64.deb`]))
+  bodies['latest-mac.yml'] = Buffer.from(meta([`X-Auto-${v2}-macos-x64.zip`, `X-Auto-${v2}-macos-arm64.zip`]))
+  const assets = Object.keys(bodies).map((name, i) => ({ id: i + 1, name, size: bodies[name].length, state: 'uploaded', browser_download_url: `https://github.com/o/r/releases/download/v${v2}/${name}` }))
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url)
+    const json = (o) => new Response(JSON.stringify(o), { status: 200, headers: { 'content-type': 'application/json' } })
+    if (u.includes('/releases/tags/')) return json({ draft: false, prerelease: false, html_url: 'https://github.com/o/r/releases/tag/v1.0.2', assets })
+    const byId = /\/releases\/assets\/(\d+)$/.exec(u)
+    const name = byId ? assets[Number(byId[1]) - 1].name : u.split('/').pop()
+    const body = bodies[name]
+    const range = opts.headers?.Range
+    if (!range) return new Response(body, { status: 200 })
+    // Like GitHub's download storage: suffix ranges are not implemented.
+    if (/^bytes=-/.test(range)) return new Response('', { status: 501 })
+    const [, from, to] = /^bytes=(\d+)-(\d+)$/.exec(range)
+    return new Response(body.subarray(Number(from), Number(to) + 1), { status: 206 })
+  }
+  try {
+    const result = await verifyRemoteRelease({ repo: 'o/r', version: v2, token: null })
+    check('remote verify: DMG trailers read with explicit byte ranges (GitHub answers suffix ranges with 501)', result.problems.length === 0, result.problems.join('; '))
+  } finally {
+    globalThis.fetch = realFetch
+  }
 }
 
 // ── build configuration guard ──
