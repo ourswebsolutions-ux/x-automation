@@ -151,6 +151,14 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: |
           out="release/$VERSION"
+          # Each mac runner must build only its own architecture (its bundled Python runtime is arch-specific).
+          if [ "$PLATFORM" = "mac" ]; then
+            other=$([ "$ARCH" = "arm64" ] && echo x64 || echo arm64)
+            if find "$out" -maxdepth 1 -name "X-Auto-*-macos-$other.*" | grep -q .; then
+              echo "::error::The $ARCH runner also produced $other files — check the mac targets in electron-builder.yml"
+              exit 1
+            fi
+          fi
           mkdir -p dist-upload
           find "$out" -maxdepth 1 -type f \( -name 'X-Auto-*' -o -name '*.yml' \) ! -name 'builder-*' -exec cp {} dist-upload/ \;
           # Each mac runner writes <channel>-mac.yml for its own arch; keep both (merged when publishing).
@@ -186,12 +194,15 @@ jobs:
         run: npm ci --ignore-scripts
       - id: version
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      # One folder per build (no merge-multiple): same-named files from two builds must not overwrite
+      # each other silently — the collect step refuses any collision.
       - uses: actions/download-artifact@v4
         with:
           pattern: x-auto-*
-          path: dist
-          merge-multiple: true
-      - name: Merge mac metadata, validate every installer and the update metadata
+          path: dist-parts
+      - name: Combine the builds (fails on duplicate file names)
+        run: node scripts/release-assets.mjs collect dist-parts dist
+      - name: Merge mac metadata from the final files, validate every installer and the update metadata
         run: node scripts/release-assets.mjs prepare "${{ steps.version.outputs.version }}" dist
       - uses: actions/upload-artifact@v4
         with:

@@ -10,7 +10,7 @@
  *        SHA256SUMS.txt; exits non-zero on any problem. Prints a Markdown summary.
  */
 import { createHash } from 'node:crypto'
-import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import yaml from 'js-yaml'
@@ -115,13 +115,30 @@ export function signatureProblem(kind, head, tail = Buffer.alloc(0)) {
 
 const sha512 = (path) => createHash('sha512').update(readFileSync(path)).digest('base64')
 
-/** Merges the per-architecture mac metadata produced on separate runners into one <channel>-mac.yml. */
-export function mergeMacMetadata(docs) {
+/**
+ * Merges the per-architecture mac metadata produced on separate runners into one <channel>-mac.yml.
+ * With `dir`, every entry's size and SHA-512 are recomputed from the final file in that folder, so
+ * the metadata always describes the files that are actually published (never a runner's stale view).
+ */
+export function mergeMacMetadata(docs, dir = null) {
   if (!docs.length) throw new Error('No mac update metadata to merge')
   const versions = new Set(docs.map((d) => String(d.version)))
   if (versions.size !== 1) throw new Error(`mac metadata versions differ: ${[...versions].join(', ')}`)
   const files = []
-  for (const d of docs) for (const f of d.files ?? []) if (!files.some((x) => x.url === f.url)) files.push(f)
+  for (const d of docs) {
+    for (const f of d.files ?? []) {
+      if (files.some((x) => x.url === f.url)) throw new Error(`${f.url} is listed by more than one mac build — each runner must build only its own architecture`)
+      if (!dir) {
+        files.push(f)
+        continue
+      }
+      const path = join(dir, String(f.url))
+      if (!existsSync(path)) throw new Error(`mac metadata lists ${f.url}, which is not among the build files`)
+      const actual = { size: statSync(path).size, sha512: sha512(path) }
+      // Keep extra fields (e.g. blockMapSize) only when they belong to this exact file.
+      files.push(actual.sha512 === f.sha512 && actual.size === Number(f.size) ? { ...f, ...actual } : { url: f.url, ...actual })
+    }
+  }
   // The legacy top-level path points at the Intel zip; electron-updater picks by arch from files[].
   const legacy = files.find((f) => /-x64\.zip$/.test(f.url)) ?? files.find((f) => f.url.endsWith('.zip')) ?? files[0]
   const releaseDate = docs.map((d) => d.releaseDate).filter(Boolean).sort().at(-1)
@@ -138,9 +155,16 @@ export function prepareRelease(version, dir, { merge = true, minInstallerBytes =
   if (merge) {
     const parts = readdirSync(dir).filter((f) => new RegExp(`^${channel}-mac-(x64|arm64)\\.yml$`).test(f))
     if (parts.length) {
-      const merged = mergeMacMetadata(parts.map((f) => yaml.load(readFileSync(join(dir, f), 'utf8'))))
-      writeFileSync(join(dir, `${channel}-mac.yml`), yaml.dump(merged, { lineWidth: -1 }))
-      for (const f of parts) rmSync(join(dir, f))
+      try {
+        const merged = mergeMacMetadata(
+          parts.map((f) => yaml.load(readFileSync(join(dir, f), 'utf8'))),
+          dir
+        )
+        writeFileSync(join(dir, `${channel}-mac.yml`), yaml.dump(merged, { lineWidth: -1 }))
+        for (const f of parts) rmSync(join(dir, f))
+      } catch (error) {
+        problems.push(`mac metadata: ${error.message}`)
+      }
     }
   }
   const present = new Set(readdirSync(dir))
@@ -198,6 +222,30 @@ export function prepareRelease(version, dir, { merge = true, minInstallerBytes =
     problems.length ? `**${problems.length} problem(s):**\n${problems.map((p) => `- ${p}`).join('\n')}` : 'All installers and update metadata validated (sizes, SHA-512, file signatures).'
   ].join('\n')
   return { problems, summary, channel }
+}
+
+/**
+ * Combines the per-build artifact folders (one per runner) into one release folder. Two builds
+ * producing a file with the same name is an error — never let one silently overwrite the other.
+ */
+export function collectArtifacts(partsDir, outDir) {
+  const problems = []
+  const origin = new Map()
+  mkdirSync(outDir, { recursive: true })
+  for (const part of readdirSync(partsDir).sort()) {
+    const partPath = join(partsDir, part)
+    if (!statSync(partPath).isDirectory()) continue
+    for (const name of readdirSync(partPath)) {
+      if (!statSync(join(partPath, name)).isFile()) continue
+      if (origin.has(name)) {
+        problems.push(`${name} was produced by both ${origin.get(name)} and ${part}`)
+        continue
+      }
+      origin.set(name, part)
+      copyFileSync(join(partPath, name), join(outDir, name))
+    }
+  }
+  return problems
 }
 
 // ── remote verification (published release on GitHub) ──
@@ -302,8 +350,15 @@ export async function verifyRemoteRelease({ repo, version, token, localDir = nul
 // ── CLI ──
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const [cmd, version, dir] = process.argv.slice(2)
+  if (cmd === 'collect') {
+    // collect <parts-dir> <out-dir>
+    const problems = collectArtifacts(version, dir)
+    for (const p of problems) console.error(`✗ ${p}`)
+    if (!problems.length) console.log(`Collected ${readdirSync(dir).length} files into ${dir}`)
+    process.exit(problems.length ? 1 : 0)
+  }
   if (!parseVersion(version)) {
-    console.error('Usage: release-assets.mjs expected <version> | prepare <version> <dir>')
+    console.error('Usage: release-assets.mjs expected <version> | prepare <version> <dir> | collect <parts-dir> <out-dir> | verify-remote <version> <owner/repo> [dir]')
     process.exit(2)
   }
   if (cmd === 'expected') {

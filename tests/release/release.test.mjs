@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import yaml from 'js-yaml'
-import { compareVersions, expectedAssets, mergeMacMetadata, prepareRelease, signatureProblem, updateChannel } from '../../scripts/release-assets.mjs'
+import { collectArtifacts, compareVersions, expectedAssets, mergeMacMetadata, prepareRelease, signatureProblem, updateChannel } from '../../scripts/release-assets.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const results = []
@@ -98,6 +98,82 @@ check('wrong metadata version and a ZIP posing as the installer are both caught'
 res = prepareRelease(v, dir)
 check('tiny installers are rejected at the real size threshold', res.problems.some((p) => /is only \d+ bytes/.test(p)))
 rmSync(dir, { recursive: true, force: true })
+
+// ── mac metadata from two runners (the v1.0.1 failure: stale sizes / hashes, colliding files) ──
+{
+  const build = () => {
+    const d = mkdtempSync(join(tmpdir(), 'axora-mac-'))
+    for (const [n, b] of Object.entries(files)) writeFileSync(join(d, n), b)
+    writeFileSync(join(d, 'latest.yml'), yaml.dump({ version: v, files: [entry(`X-Auto-${v}-windows-x64-setup.exe`)], path: `X-Auto-${v}-windows-x64-setup.exe` }))
+    writeFileSync(join(d, 'latest-linux.yml'), yaml.dump({ version: v, files: [entry(`X-Auto-${v}-linux-x86_64.AppImage`), entry(`X-Auto-${v}-linux-amd64.deb`)] }))
+    return d
+  }
+  const stale = (n) => ({ url: n, sha512: createHash('sha512').update('a different build').digest('base64'), size: 12345, blockMapSize: 99 })
+  const half = (d, arch, list) => writeFileSync(join(d, `latest-mac-${arch}.yml`), yaml.dump({ version: v, files: list, path: list[0]?.url, sha512: list[0]?.sha512, releaseDate: '2026-10-11T12:00:00.000Z' }))
+  const macFiles = (arch) => [`X-Auto-${v}-macos-${arch}.zip`, `X-Auto-${v}-macos-${arch}.dmg`]
+
+  // 1. Halves whose sizes/hashes don't match the final files → rebuilt from the files, release valid.
+  let d = build()
+  half(d, 'x64', macFiles('x64').map(stale))
+  half(d, 'arm64', macFiles('arm64').map(stale))
+  let res = prepareRelease(v, d, { minInstallerBytes: 1024 })
+  const mac = yaml.load(readFileSync(join(d, 'latest-mac.yml'), 'utf8'))
+  const matches = (f) => f.size === files[f.url].length && f.sha512 === createHash('sha512').update(files[f.url]).digest('base64')
+  check('mac merge: stale sizes and hashes are replaced by the real ones of the final files', res.problems.length === 0 && mac.files.length === 4 && mac.files.every(matches), res.problems.join('; ') + JSON.stringify(mac.files.map((f) => [f.url, f.size])))
+  check('mac merge: a stale blockMapSize from another build is dropped', mac.files.every((f) => f.blockMapSize === undefined))
+  check('mac merge: both architectures listed with their own filenames; legacy path = Intel zip with its real hash', ['x64', 'arm64'].every((a) => mac.files.some((f) => f.url === `X-Auto-${v}-macos-${a}.zip`)) && mac.path === `X-Auto-${v}-macos-x64.zip` && mac.sha512 === createHash('sha512').update(files[`X-Auto-${v}-macos-x64.zip`]).digest('base64'))
+  rmSync(d, { recursive: true, force: true })
+
+  // 2. One runner built both arches (what the pinned target arch caused) → refused, not silently merged.
+  d = build()
+  half(d, 'x64', [...macFiles('x64'), ...macFiles('arm64')].map(entry))
+  half(d, 'arm64', [...macFiles('arm64'), ...macFiles('x64')].map(entry))
+  res = prepareRelease(v, d, { minInstallerBytes: 1024 })
+  check('mac merge: the same file listed by both mac builds is refused', res.problems.some((p) => p.includes('listed by more than one mac build')), res.problems.join('; '))
+  rmSync(d, { recursive: true, force: true })
+
+  // 3. Missing Apple-silicon build → refused (no release without both mac architectures).
+  d = build()
+  for (const n of macFiles('arm64')) rmSync(join(d, n))
+  half(d, 'x64', macFiles('x64').map(entry))
+  res = prepareRelease(v, d, { minInstallerBytes: 1024 })
+  check('mac merge: missing arm64 build → missing files and metadata entry reported', res.problems.includes(`missing X-Auto-${v}-macos-arm64.zip`) && res.problems.some((p) => p.includes(`does not reference X-Auto-${v}-macos-arm64.zip`)), res.problems.join('; '))
+  rmSync(d, { recursive: true, force: true })
+
+  // 4. A half pointing at a file that isn't among the build files → refused.
+  d = build()
+  half(d, 'x64', macFiles('x64').map(entry))
+  half(d, 'arm64', [...macFiles('arm64').map(entry), { url: `X-Auto-${v}-macos-arm64-extra.zip`, sha512: 'x', size: 1 }])
+  res = prepareRelease(v, d, { minInstallerBytes: 1024 })
+  check('mac merge: an entry for a file that was not built is refused', res.problems.some((p) => p.includes('not among the build files')), res.problems.join('; '))
+  rmSync(d, { recursive: true, force: true })
+}
+
+// ── combining the per-build artifact folders ──
+{
+  const parts = mkdtempSync(join(tmpdir(), 'axora-parts-'))
+  const out = join(parts, '..', `${parts.split('/').pop()}-out`)
+  mkdirSync(join(parts, 'x-auto-macos-arm64'))
+  mkdirSync(join(parts, 'x-auto-macos-x64'))
+  writeFileSync(join(parts, 'x-auto-macos-arm64', `X-Auto-${v}-macos-arm64.zip`), 'arm')
+  writeFileSync(join(parts, 'x-auto-macos-x64', `X-Auto-${v}-macos-x64.zip`), 'intel')
+  let problems = collectArtifacts(parts, out)
+  check('collect: distinct files from each build are combined', problems.length === 0 && readFileSync(join(out, `X-Auto-${v}-macos-x64.zip`), 'utf8') === 'intel' && readFileSync(join(out, `X-Auto-${v}-macos-arm64.zip`), 'utf8') === 'arm', problems.join('; '))
+  writeFileSync(join(parts, 'x-auto-macos-x64', `X-Auto-${v}-macos-arm64.zip`), 'intel runner built arm64 too')
+  rmSync(out, { recursive: true, force: true })
+  problems = collectArtifacts(parts, out)
+  check('collect: the same filename from two builds is an error (no silent overwrite)', problems.some((p) => p.includes(`X-Auto-${v}-macos-arm64.zip was produced by both`)) && readFileSync(join(out, `X-Auto-${v}-macos-arm64.zip`), 'utf8') === 'arm', problems.join('; '))
+  rmSync(parts, { recursive: true, force: true })
+  rmSync(out, { recursive: true, force: true })
+}
+
+// ── build configuration guard ──
+{
+  const config = yaml.load(readFileSync(join(root, 'electron-builder.yml'), 'utf8'))
+  const macTargets = config.mac.target.map((t) => (typeof t === 'string' ? { target: t } : t))
+  check('electron-builder: mac targets leave the arch to the CLI (an explicit arch overrides --arm64/--x64)', macTargets.length >= 2 && macTargets.every((t) => t.arch === undefined && !String(t.target).includes(':')), JSON.stringify(macTargets))
+  check('electron-builder: Linux, Windows and both mac formats still configured', ['AppImage', 'deb'].every((t) => config.linux.target.some((x) => x.target === t)) && ['nsis', 'zip'].every((t) => config.win.target.some((x) => x.target === t)) && ['dmg', 'zip'].every((t) => macTargets.some((x) => x.target === t)))
+}
 
 // ── the release command in a scratch repository (offline, never touches GitHub) ──
 const scratch = mkdtempSync(join(tmpdir(), 'axora-relcmd-'))
