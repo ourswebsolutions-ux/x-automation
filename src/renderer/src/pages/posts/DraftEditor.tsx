@@ -283,7 +283,8 @@ export function DraftEditor(props: DraftEditorProps) {
         <span className="mr-auto flex items-center gap-1.5 text-xs text-fg-subtle">
           <KeyCombo keys={[MOD_LABEL, 'S']} /> to save
         </span>
-        {draft && editable && <PublishActions draft={draft} dirty={dirty} accountId={value.accountId} accounts={props.accounts} />}
+        {/* Stays mounted after publishing starts (the post is then locked) so the progress dialog remains open. */}
+        {draft && <PublishActions draft={draft} dirty={dirty} editable={editable} accountId={value.accountId} accounts={props.accounts} />}
         {draft && editable && <span className="mx-1 h-5 w-px bg-line" aria-hidden />}
         <Button size="sm" variant="ghost" icon={Eraser} disabled={!editable || empty} onClick={() => setConfirm('clear')}>
           Clear

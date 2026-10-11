@@ -10,10 +10,11 @@ interface Props {
   presetId: string | null
   activeRun: AutomationRun | null
   onStarted: (run: AutomationRun) => void
+  startLabel?: string
 }
 
 /** The pre-run summary, kept up to date as the form changes, with the single confirmation before Start. */
-export function PlanPanel({ config, presetId, activeRun, onStarted }: Props) {
+export function PlanPanel({ config, presetId, activeRun, onStarted, startLabel = 'Start automation' }: Props) {
   const toast = useToast()
   const [plan, setPlan] = useState<RunPlan | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -68,7 +69,7 @@ export function PlanPanel({ config, presetId, activeRun, onStarted }: Props) {
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
             <Stat label="Profiles" value={`${plan.profiles.eligible} of ${plan.profiles.selected}`} detail={`${plan.profiles.available} available · ${plan.profiles.unavailable} unavailable`} />
             <Stat label="Posts" value={String(plan.posts)} detail={plan.fromDrafts ? `${plan.fromDrafts} from your drafts${plan.generations ? ` · ${plan.generations} generated` : ''}` : plan.generations !== plan.posts ? `${plan.generations} unique texts` : 'all different'} />
-            <Stat label="Images" value={String(plan.images)} detail={config.content.generateImages ? (plan.fromDrafts ? 'for posts without one' : 'one per post') : config.content.existingAssetId ? 'library image' : 'text only'} />
+            <Stat label="Images" value={String(plan.images)} detail={config.content.generateImages ? (plan.fromDrafts ? 'for posts without one' : 'one per post') : config.content.source === 'drafts' ? (plan.images ? 'already on your posts' : 'text only') : config.content.existingAssetId ? 'library image' : 'text only'} />
             <Stat label="When" value={plan.firstRunAt ? formatDateTime(plan.firstRunAt) : '—'} detail={plan.lastRunAt && plan.lastRunAt !== plan.firstRunAt ? `last ${formatDateTime(plan.lastRunAt)}` : config.mode === 'manual-approval' ? 'after your approval' : ''} />
           </dl>
           <ul className="flex flex-col gap-1 text-xs text-fg-muted" aria-label="Enabled actions">
@@ -96,7 +97,7 @@ export function PlanPanel({ config, presetId, activeRun, onStarted }: Props) {
         </>
       )}
       <Button variant="primary" icon={Play} className="h-10" disabled={!canStart} onClick={() => setConfirming(true)}>
-        Start automation
+        {startLabel}
       </Button>
       {busy && <p className="text-xs text-fg-subtle">A run is active. Finish, stop or approve it first.</p>}
 
@@ -105,7 +106,7 @@ export function PlanPanel({ config, presetId, activeRun, onStarted }: Props) {
         onClose={() => setConfirming(false)}
         dismissible={!starting}
         title={`Start “${config.name}”?`}
-        description={config.mode === 'full-auto' ? 'Full Auto: posts are generated and published without asking again for each one.' : 'Manual Approval: posts are generated and wait for your approval.'}
+        description={config.mode === 'full-auto' ? 'Each post is published at its time, without asking again for each one.' : 'Each post waits for your approval before it is published.'}
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirming(false)} disabled={starting}>

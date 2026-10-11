@@ -20,11 +20,26 @@ async function invoke<T>(channel: IpcChannelName, payload?: unknown): Promise<T>
   throw new RelayIpcError(result.error.code, `[${result.error.code}] ${result.error.message}`)
 }
 
+/** One IPC listener per event channel, fanned out to every subscriber (a page may subscribe many times). */
+const subscribers = new Map<IpcEventName, Set<{ fn: (payload: unknown) => void }>>()
 function subscribe<T>(channel: IpcEventName, listener: (payload: T) => void): Unsubscribe {
-  // Never hand the raw IpcRendererEvent (and its `sender`) to the renderer.
-  const wrapped = (_event: IpcRendererEvent, payload: T) => listener(payload)
-  ipcRenderer.on(channel, wrapped)
-  return () => ipcRenderer.removeListener(channel, wrapped)
+  let set = subscribers.get(channel)
+  if (!set) {
+    const fresh = new Set<{ fn: (payload: unknown) => void }>()
+    subscribers.set(channel, fresh)
+    set = fresh
+    // Never hand the raw IpcRendererEvent (and its `sender`) to the renderer.
+    ipcRenderer.on(channel, (_event: IpcRendererEvent, payload: unknown) => {
+      for (const entry of [...fresh]) entry.fn(payload)
+    })
+  }
+  // Each subscription is its own entry, so subscribing the same function twice stays two subscriptions.
+  const entry = { fn: listener as (payload: unknown) => void }
+  const listeners = set
+  listeners.add(entry)
+  return () => {
+    listeners.delete(entry)
+  }
 }
 
 const api: RelayApi = {

@@ -1,6 +1,6 @@
-import { Bot, Copy, FileText, HardDrive, Image as ImageIcon, Images, Sparkles, SquarePen, Trash2 } from 'lucide-react'
+import { Bot, Copy, FileText, HardDrive, Image as ImageIcon, Images, PenLine, Sparkles, SquarePen, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useBlocker, useNavigate, useSearchParams } from 'react-router'
+import { useBlocker, useSearchParams } from 'react-router'
 import { composePost } from '@shared/config/postLimits'
 import type { Draft, DraftStatus } from '@shared/types/domain'
 import {
@@ -12,6 +12,7 @@ import {
   PageHeader,
   Panel,
   SearchField,
+  SegmentedControl,
   Select,
   SkeletonRows,
   StatusBadge,
@@ -29,7 +30,8 @@ import { measurePost } from '@/lib/postLength'
 import { usePreferences } from '@/state/preferences'
 import { useNotifications } from '@/state/notifications'
 import { NAV_ITEMS } from '@/app/navigation'
-import { DraftEditor, type EditorValue } from './DraftEditor'
+import { DraftEditor, type EditorValue } from '../posts/DraftEditor'
+import { AiComposer } from './AiComposer'
 import { AssetLibraryDialog } from '@/components/feature/AssetLibraryDialog'
 
 type StatusFilter = 'all' | DraftStatus
@@ -40,9 +42,15 @@ const toInput = ({ media, ...value }: EditorValue) => ({ ...value, attachments: 
 
 const STATUS_LABEL: Record<DraftStatus, string> = { draft: 'Draft', ready: 'Ready', scheduled: 'Scheduled', published: 'Published', failed: 'Failed' }
 
-export function PostsPage() {
+type Mode = 'ai' | 'manual'
+
+/**
+ * Create Post: write a post yourself (Manual) or with your AI provider (AI), add images, preview
+ * and edit it, then publish it now to all or selected accounts — or keep it for a campaign.
+ * Saved posts are listed on the left (drafts on this device).
+ */
+export function CreatePostPage() {
   const toast = useToast()
-  const navigate = useNavigate()
   const { push } = useNotifications()
   const { preferences } = usePreferences()
   const [params, setParams] = useSearchParams()
@@ -59,10 +67,12 @@ export function PostsPage() {
   const [libraryOpen, setLibraryOpen] = useState(false)
 
   const list = drafts.data ?? []
-  const composing = params.get('compose') === '1'
+  const mode: Mode = params.get('mode') === 'ai' ? 'ai' : 'manual'
   const selectedId = params.get('draft')
   const selected = selectedId ? (list.find((d) => d.id === selectedId) ?? null) : null
-  const editorOpen = composing || Boolean(selected)
+  // Manual without a selected post = a new post in the editor; AI without one = the AI composer.
+  const editorOpen = Boolean(selected) || mode === 'manual'
+  const withMode = (next: Record<string, string>) => (mode === 'ai' ? { ...next, mode: 'ai' } : next)
 
   // A stale ?draft= link (e.g. a deleted draft) falls back to the list.
   useEffect(() => {
@@ -82,7 +92,8 @@ export function PostsPage() {
     if (dirty && preferences.confirmations.discardChanges) setPendingSwitch(() => action)
     else action()
   }
-  const open = (draft: Draft | null) => guard(() => setParams(draft ? { draft: draft.id } : { compose: '1' }))
+  const open = (draft: Draft | null) => guard(() => setParams(draft ? withMode({ draft: draft.id }) : withMode({})))
+  const setMode = (next: Mode) => guard(() => setParams(next === 'ai' ? { mode: 'ai' } : {}))
 
   const counts = useMemo(() => {
     const c: Partial<Record<DraftStatus, number>> = {}
@@ -111,7 +122,7 @@ export function PostsPage() {
       upsertLocal(saved)
       setDirty(false)
       toast({ tone: 'success', title: selected ? 'Draft saved' : 'Draft created' })
-      if (!selected) setParams({ draft: saved.id }, { replace: true })
+      if (!selected) setParams(withMode({ draft: saved.id }), { replace: true })
     } catch (error) {
       toast({ tone: 'danger', title: 'Draft not saved', description: errorMessage(error), duration: 8000 })
     } finally {
@@ -146,9 +157,9 @@ export function PostsPage() {
       drafts.setData(list.filter((d) => d.id !== draft.id))
       if (selected?.id === draft.id) {
         setDirty(false)
-        setParams({}, { replace: true })
+        setParams(withMode({}), { replace: true })
       }
-      push({ tone: 'warning', title: 'Draft deleted', body: draft.body.slice(0, 80), to: NAV_ITEMS.posts.path })
+      push({ tone: 'warning', title: 'Post deleted', body: draft.body.slice(0, 80), to: NAV_ITEMS.create.path })
       setPendingDelete(null)
     } catch (error) {
       toast({ tone: 'danger', title: 'Could not delete draft', description: errorMessage(error) })
@@ -162,8 +173,8 @@ export function PostsPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={NAV_ITEMS.posts.label}
-        description={NAV_ITEMS.posts.description}
+        title={NAV_ITEMS.create.label}
+        description={NAV_ITEMS.create.description}
         meta={
           <Tooltip content="Stored in the local SQLite database on this device">
             <StatusBadge tone="neutral" icon={HardDrive}>
@@ -176,19 +187,27 @@ export function PostsPage() {
             <Button variant="ghost" icon={Images} onClick={() => setLibraryOpen(true)}>
               Image library
             </Button>
-            <Button icon={Sparkles} onClick={() => guard(() => navigate(NAV_ITEMS.generator.path))}>
-              Generate with AI
-            </Button>
-            <Button variant="primary" icon={SquarePen} onClick={() => open(null)} title={`New draft (${MOD_LABEL}+N)`}>
-              New draft
+            <Button variant="primary" icon={SquarePen} onClick={() => open(null)} title={`New post (${MOD_LABEL}+N)`}>
+              New post
             </Button>
           </>
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 @5xl:grid-cols-[360px_minmax(0,1fr)]">
+      <SegmentedControl<Mode>
+        aria-label="Post type"
+        value={mode}
+        onChange={setMode}
+        options={[
+          { value: 'ai', label: 'AI Post', icon: Sparkles },
+          { value: 'manual', label: 'Manual Post', icon: PenLine }
+        ]}
+        className="self-start"
+      />
+
+      <div className="grid grid-cols-1 gap-4 @5xl:grid-cols-[340px_minmax(0,1fr)]">
         <Panel
-          title="Drafts"
+          title="Saved posts"
           meta={<span className="tabular text-xs text-fg-subtle">{drafts.data ? list.length : ''}</span>}
           padded={false}
           className="@5xl:sticky @5xl:top-4 @5xl:max-h-[calc(100vh-180px)] @5xl:self-start"
@@ -231,12 +250,14 @@ export function PostsPage() {
             <EmptyState
               size="sm"
               icon={FileText}
-              title="No drafts yet"
-              description="Write one by hand — no AI provider needed — or generate variations with AI."
+              title="No saved posts yet"
+              description="Write one by hand — no AI provider needed — or generate one with AI."
               actions={
-                <Button size="sm" variant="primary" icon={SquarePen} onClick={() => open(null)}>
-                  New draft
-                </Button>
+                mode === 'ai' ? undefined : (
+                  <Button size="sm" variant="primary" icon={Sparkles} onClick={() => setMode('ai')}>
+                    Generate with AI
+                  </Button>
+                )
               }
             />
           ) : rows.length === 0 ? (
@@ -259,8 +280,16 @@ export function PostsPage() {
           )}
         </Panel>
 
-        {editorOpen ? (
+        {!editorOpen ? (
+          <AiComposer
+            onOpenDraft={(id) => {
+              drafts.reload()
+              guard(() => setParams({ draft: id, mode: 'ai' }))
+            }}
+          />
+        ) : (
           <DraftEditor
+            key={selected?.id ?? 'new'}
             draft={selected}
             accounts={accounts.data ?? []}
             saving={saving}
@@ -270,33 +299,15 @@ export function PostsPage() {
             onDelete={() => selected && requestDelete(selected)}
             onDirtyChange={onDirtyChange}
           />
-        ) : (
-          <Panel>
-            <EmptyState
-              icon={SquarePen}
-              title="Select a draft or start a new one"
-              description="Drafts are saved on this device. AI tools are optional — everything here works without a provider."
-              actions={
-                <>
-                  <Button variant="primary" icon={SquarePen} onClick={() => open(null)}>
-                    New draft
-                  </Button>
-                  <Button icon={Sparkles} onClick={() => navigate(NAV_ITEMS.generator.path)}>
-                    Generate with AI
-                  </Button>
-                </>
-              }
-            />
-          </Panel>
         )}
       </div>
 
       <AssetLibraryDialog open={libraryOpen} onClose={() => setLibraryOpen(false)} />
       <ConfirmDialog
         open={Boolean(pendingDelete)}
-        title="Delete this draft?"
+        title="Delete this post?"
         description="It is removed from this device and can’t be undone. Its generation history stays."
-        confirmLabel="Delete draft"
+        confirmLabel="Delete post"
         tone="danger"
         busy={deleting}
         onCancel={() => setPendingDelete(null)}
@@ -323,7 +334,7 @@ export function PostsPage() {
 }
 
 /**
- * Blocks leaving the Posts page while there are unsaved edits. Mounted only
+ * Blocks leaving Create Post while there are unsaved edits. Mounted only
  * while the editor is dirty, so no blocker exists during ordinary navigation.
  */
 function LeaveGuard({ onLeave }: { onLeave: () => void }) {

@@ -11,10 +11,12 @@ interface Props {
   value: TargetSettings
   onChange: (next: TargetSettings) => void
   publishing: boolean
+  /** Offer "save as drafts only" (not meaningful for a campaign that publishes). */
+  allowDraftsOnly?: boolean
 }
 
 /** All Profiles (default) or a selection, plus how posts are spread over them. */
-export function ProfileTargets({ value, onChange, publishing }: Props) {
+export function ProfileTargets({ value, onChange, publishing, allowDraftsOnly = true }: Props) {
   const toast = useToast()
   const profiles = useBrowserProfiles()
   const accounts = useAccounts()
@@ -98,7 +100,7 @@ export function ProfileTargets({ value, onChange, publishing }: Props) {
           options={[
             { value: 'unique', label: 'Different posts per profile' },
             { value: 'same', label: 'Same posts on every profile' },
-            { value: 'drafts', label: 'Save as drafts only' }
+            ...(allowDraftsOnly ? [{ value: 'drafts' as const, label: 'Save as drafts only' }] : [])
           ]}
         />
       </Field>

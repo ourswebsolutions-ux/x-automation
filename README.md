@@ -3,18 +3,16 @@
 Windows desktop workspace for managing X accounts, drafts, scheduling and automation.
 Built with Electron, React, TypeScript, Vite (electron-vite) and Tailwind CSS.
 
-**Status: Phase 12 (AI automation), not fully verified.** The Automation page turns one description
-into a run. In **Full Auto** (the default) it writes the posts, generates and attaches images, assigns
-them to IX Browser profiles, then publishes and verifies them, with one confirmation before the run.
-In **Manual Approval** each post can be approved, edited, regenerated or removed first. Profiles can
-be All (the default) or Selected.
-- **Content sources:** posts can be AI-generated, your own drafts, or both.
-- **Automation Schedule:** a recurring schedule runs an automation on chosen days and daily hours
-  between a start and an end date, separately from the schedules of individual posts.
-- **Manual posts:** can go out from several accounts at once, each account getting its own copy.
-- **Run controls:** Pause, Resume and Stop. Runs survive restarts and are available as presets and
-  from the dashboard.
+**Status: Phase 12, not fully verified.** Automation lives in two tabs:
+- **Create Post:** write a post yourself or with AI (AI Post / Manual Post), add images, preview and
+  edit it, then **Publish now** to all or selected accounts (with live progress), or **Use in a
+  campaign**.
+- **Campaign Automation:** choose saved posts and accounts, set the schedule (start, end or
+  duration, posting days and hours, interval, limits), review, and **Start campaign**. Then pause,
+  resume or stop it and follow its status, next posting times, published posts and errors. The
+  posting queue (needs-review, retries, hold) and earlier recurring campaigns are on the same page.
 
+Dashboard, Accounts & Profiles, Post Links and Settings are unchanged.
 See [docs/automation.md](docs/automation.md).
 Phases 8–11 added:
 - Scheduling and publishing through IX Browser profiles with a crash-safe task queue
@@ -41,8 +39,8 @@ Phase 7 (images & attachments): Drafts can carry up to four images (or one
 animated GIF): uploaded from disk, picked from the local image library, or generated with an
 image provider (OpenAI Images API). Files live in an app-managed folder; SQLite keeps metadata.
 Phase 6 (tweet generator & editor): Drafts are written, edited, searched,
-filtered, duplicated and deleted in Posts & Drafts — no AI provider needed. The AI Tweet
-Generator and ten AI editing tools run through the Phase 5 AI service, and every request
+filtered, duplicated and deleted in Create Post — no AI provider needed. The AI
+generator and ten AI editing tools run through the Phase 5 AI service, and every request
 is kept in a generation history.
 Phase 5 (AI providers): OpenAI and OpenAI-compatible providers can be added,
 tested with real requests, and used through a typed text-generation service; every AI
@@ -305,7 +303,7 @@ retried or rotated automatically. Passwords live in the OS-encrypted vault (migr
 
 ### Scheduling, queue & publishing (Phase 8)
 
-Drafts are scheduled per account (or published now) from the editor or the Scheduler. A
+Posts are published now (from Create Post) or scheduled by campaigns (Campaign Automation). A
 persistent SQLite queue runs one post at a time (one per account, with spacing), recovers after
 restarts, and retries only failures that happened before anything was submitted. The Python
 engine posts in the profile's own signed-in session through IX Browser and confirms the post from
@@ -319,24 +317,18 @@ exported. Engagement tasks are a checklist the user acts on — X Auto never lik
 replies or follows by itself — with guardrails against self-amplification and coordinated
 engagement. [docs/engagement.md](docs/engagement.md).
 
-### AI automation (Phase 12)
+### Create Post and Campaign Automation (Phase 12)
 
-The Automation page (and *Create automation* on the dashboard) plans and runs a whole batch:
-- **Content**: prompt, topic, language, tone, length, hashtags, provider and model, text and image
-  generation, and an optional library image.
-- **Mode**: Full Auto or Manual Approval.
-- **Profiles**: All or Selected, with live counts.
-- **Actions** and **timing**: interval, posts per profile, run limit, working hours.
-- **Failure policies.**
+**Create Post** combines AI generation and manual writing in one editor, with images (upload,
+library or generated), a preview, and publishing to all or selected accounts.
 
-Before it starts, a live summary shows what will happen. Runs reuse the publishing queue, so every
-post is verified. A run is recorded as `automation_runs` and `run_items` (migration 011).
-Reposts, comments and likes are planned as tasks for the user, never performed automatically.
-[docs/automation.md](docs/automation.md).
+**Campaign Automation** schedules saved posts across accounts on the existing automation runs and
+publishing queue, so every post is verified. Repost, comment and like tasks are planned for the
+user, never performed automatically. Details: [docs/automation.md](docs/automation.md).
 
 ### Automation controls, usage & backups (Phases 10–11)
 
-Pause / resume / stop now and per-task hold in the Task Queue; plain-language notifications only
+Pause / resume / stop now and per-task hold in the posting queue (Campaign Automation); plain-language notifications only
 (no log screen); usage & cost tracking with user-entered rates and optional limits; one-file
 verified backups (database + images) with automatic schedules and safe restore.
 [docs/operations.md](docs/operations.md).

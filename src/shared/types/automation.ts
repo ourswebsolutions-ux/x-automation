@@ -75,6 +75,8 @@ export interface ScheduleSettings {
   postsPerProfile: number
   maxPostsPerRun: number
   workingHours: { enabled: boolean; start: string; end: string }
+  /** Posting days of the week (0 = Sunday … 6 = Saturday). Posts are only placed on these days. */
+  days: number[]
 }
 
 export interface FailurePolicy {

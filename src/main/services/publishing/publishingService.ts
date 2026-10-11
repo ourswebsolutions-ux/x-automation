@@ -451,7 +451,7 @@ export class PublishingService {
         event: 'taskFailures',
         title: 'Publishing outcome needs review',
         body: `It may have been posted from ${who}. Check X, then confirm in the task queue.`,
-        to: '/queue?view=attention'
+        to: '/campaigns?queue=attention'
       })
     } else if (settlement.status === 'failed') {
       const held = task.accountId ? this.heldForAccount.get(task.accountId) : undefined
@@ -463,13 +463,13 @@ export class PublishingService {
             event: 'taskFailures',
             title: settlement.errorCode === 'SESSION_EXPIRED' ? `${who} is signed out of X` : `${who}: a different account is signed in`,
             body: `${held} waiting ${held === 1 ? 'post is' : 'posts are'} on hold. Fix the sign-in in IX Browser, then release them in the task queue.`,
-            to: '/queue'
+            to: '/campaigns?view=queue'
           },
           { key: `account-blocked:${task.accountId}` }
         )
       }
       this.deps.notifier.notify(
-        { tone: 'danger', event: 'taskFailures', title: 'A post could not be published', body: settlement.error ?? 'Publishing failed.', to: '/queue?view=attention' },
+        { tone: 'danger', event: 'taskFailures', title: 'A post could not be published', body: settlement.error ?? 'Publishing failed.', to: '/campaigns?queue=attention' },
         { key: `publish-failed:${task.accountId}:${settlement.errorCode}` }
       )
     }

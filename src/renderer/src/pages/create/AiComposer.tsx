@@ -1,4 +1,4 @@
-import { Copy, FilePlus2, History, PenLine, RefreshCw, Settings2, Sparkles, Square, SquarePen, Wand2 } from 'lucide-react'
+import { Copy, FilePlus2, History, PenLine, RefreshCw, Settings2, Sparkles, Square, Wand2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { LENGTH_PROFILE_LIST, type LengthProfileId } from '@shared/config/postLimits'
@@ -11,7 +11,6 @@ import {
   IconButton,
   Input,
   Notice,
-  PageHeader,
   Panel,
   SegmentedControl,
   Select,
@@ -34,7 +33,7 @@ import { errorMessage, relay } from '@/lib/bridge'
 import { cn } from '@/lib/cn'
 import { formatDateTime, formatNumber, formatRelative } from '@/lib/format'
 import { measurePost } from '@/lib/postLength'
-import { NAV_ITEMS, settingsPath } from '@/app/navigation'
+import { settingsPath } from '@/app/navigation'
 import { TOOL_LABEL } from '../posts/AssistPanel'
 
 const STORAGE_KEY = 'relay.generator.brief'
@@ -64,7 +63,11 @@ function loadBrief(): Omit<GenerationBrief, 'lengthProfile'> {
   }
 }
 
-export function GeneratorPage() {
+/**
+ * The AI half of Create Post: a brief → variations from your AI provider → open one in the editor
+ * (or keep several as saved posts). Facts in the brief are the only facts the AI may use.
+ */
+export function AiComposer({ onOpenDraft }: { onOpenDraft: (draftId: string) => void }) {
   const toast = useToast()
   const navigate = useNavigate()
   const providers = useTextProviders()
@@ -115,24 +118,15 @@ export function GeneratorPage() {
   const saveDraft = async (record: GenerationRecord, text: string, openAfter: boolean) => {
     try {
       const draft = await relay.drafts.save({ body: text, hashtags: [], accountId: null, aiAssisted: true, sourceGenerationId: record.id })
-      if (openAfter) navigate(`${NAV_ITEMS.posts.path}?draft=${draft.id}`)
-      else toast({ tone: 'success', title: 'Saved as a draft', action: { label: 'Open', onClick: () => navigate(`${NAV_ITEMS.posts.path}?draft=${draft.id}`) } })
+      if (openAfter) onOpenDraft(draft.id)
+      else toast({ tone: 'success', title: 'Saved as a post', action: { label: 'Open', onClick: () => onOpenDraft(draft.id) } })
     } catch (error) {
       toast({ tone: 'danger', title: 'Could not save the draft', description: errorMessage(error) })
     }
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={NAV_ITEMS.generator.label}
-        description={NAV_ITEMS.generator.description}
-        actions={
-          <Button icon={SquarePen} onClick={() => navigate(`${NAV_ITEMS.posts.path}?compose=1`)}>
-            Write manually
-          </Button>
-        }
-      />
+    <div className="flex flex-col gap-4">
 
       {noProvider && (
         <Notice
@@ -148,7 +142,7 @@ export function GeneratorPage() {
         </Notice>
       )}
 
-      <div className="grid grid-cols-1 gap-4 @5xl:grid-cols-[400px_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-4 @4xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
         <form
           aria-label="Generation brief"
           className="flex flex-col gap-4 rounded-lg border border-line bg-surface-2 p-4 @5xl:sticky @5xl:top-4 @5xl:self-start"
@@ -370,10 +364,10 @@ function Variation(props: { index: number; text: string; maxWeighted: number; on
       {length.isOver && <StatusBadge tone="danger">Over the limit — shorten before posting</StatusBadge>}
       <footer className="flex flex-wrap gap-1.5">
         <Button size="sm" icon={PenLine} onClick={props.onOpen}>
-          Edit as draft
+          Use this post
         </Button>
         <Button size="sm" variant="ghost" icon={FilePlus2} onClick={props.onSave}>
-          Save as draft
+          Save for later
         </Button>
         <IconButton icon={Copy} label="Copy" size="sm" onClick={() => void navigator.clipboard.writeText(props.text).then(() => toast({ tone: 'success', title: 'Copied' }))} />
       </footer>

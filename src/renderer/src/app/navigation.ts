@@ -7,6 +7,7 @@ import {
   ListChecks,
   Settings,
   Sparkles,
+  SquarePen,
   UsersRound,
   Workflow,
   type LucideIcon
@@ -44,54 +45,29 @@ export const NAV_ITEMS: Record<RouteId, NavItem> = {
     icon: UsersRound,
     keywords: ['profiles', 'ix browser', 'handles', 'users']
   },
-  generator: {
-    id: 'generator',
-    path: '/generator',
-    label: 'AI Tweet Generator',
-    description: 'Generate post variations with your AI provider, then refine them as drafts',
-    icon: Sparkles,
-    keywords: ['ai', 'openai', 'generate', 'write', 'image']
+  create: {
+    id: 'create',
+    path: '/create',
+    label: 'Create Post',
+    description: 'Write a post yourself or with AI, add an image, then publish it or save it for a campaign',
+    icon: SquarePen,
+    keywords: ['write', 'compose', 'draft', 'ai', 'generate', 'manual', 'image', 'publish', 'tweet', 'post']
   },
-  posts: {
-    id: 'posts',
-    path: '/posts',
-    label: 'Posts & Drafts',
-    description: 'Write, edit and organise posts before publishing',
-    icon: FileText,
-    keywords: ['drafts', 'compose', 'tweets', 'write']
-  },
-  automation: {
-    id: 'automation',
-    path: '/automation',
-    label: 'Automation',
-    description: 'Describe the posts you want, choose profiles and start',
+  campaigns: {
+    id: 'campaigns',
+    path: '/campaigns',
+    label: 'Campaign Automation',
+    description: 'Choose saved posts and accounts, set the schedule, and start, pause or stop campaigns',
     icon: Workflow,
-    keywords: ['run', 'start', 'full auto', 'approval', 'presets', 'workflow', 'generate']
+    keywords: ['campaign', 'automation', 'schedule', 'start', 'pause', 'stop', 'queue', 'recurring', 'days', 'interval']
   },
-  schedules: {
-    id: 'schedules',
-    path: '/automation-schedule',
-    label: 'Automation Schedule',
-    description: 'Run an automation on chosen days and hours, between two dates',
-    icon: CalendarRange,
-    keywords: ['recurring', 'daily', 'weekly', 'days', 'working hours', 'automation schedule', 'repeat']
-  },
-  scheduler: {
-    id: 'scheduler',
-    path: '/scheduler',
-    label: 'Scheduler',
-    description: 'Plan when posts go out, per account',
-    icon: CalendarClock,
-    keywords: ['calendar', 'schedule', 'timing']
-  },
-  queue: {
-    id: 'queue',
-    path: '/queue',
-    label: 'Task Queue',
-    description: 'Running, queued and finished automation tasks',
-    icon: ListChecks,
-    keywords: ['tasks', 'jobs', 'automation', 'running']
-  },
+  // Merged pages: their old addresses lead to the page that now holds them (not shown in navigation).
+  generator: { id: 'generator', path: '/create?mode=ai', label: 'Create Post', description: 'Generate a post with AI', icon: Sparkles, keywords: [] },
+  posts: { id: 'posts', path: '/create', label: 'Create Post', description: 'Write and edit posts', icon: FileText, keywords: [] },
+  automation: { id: 'automation', path: '/campaigns', label: 'Campaign Automation', description: 'Campaigns', icon: Workflow, keywords: [] },
+  schedules: { id: 'schedules', path: '/campaigns', label: 'Campaign Automation', description: 'Recurring campaigns', icon: CalendarRange, keywords: [] },
+  scheduler: { id: 'scheduler', path: '/campaigns?view=queue', label: 'Campaign Automation', description: 'Scheduled posts', icon: CalendarClock, keywords: [] },
+  queue: { id: 'queue', path: '/campaigns?view=queue', label: 'Campaign Automation', description: 'Posting queue', icon: ListChecks, keywords: [] },
   links: {
     id: 'links',
     path: '/links',
@@ -112,8 +88,7 @@ export const NAV_ITEMS: Record<RouteId, NavItem> = {
 
 export const NAV_GROUPS: NavGroup[] = [
   { label: 'Workspace', items: [NAV_ITEMS.dashboard, NAV_ITEMS.accounts] },
-  { label: 'Create', items: [NAV_ITEMS.generator, NAV_ITEMS.posts] },
-  { label: 'Automate', items: [NAV_ITEMS.automation, NAV_ITEMS.schedules, NAV_ITEMS.scheduler, NAV_ITEMS.queue] },
+  { label: 'Automation', items: [NAV_ITEMS.create, NAV_ITEMS.campaigns] },
   { label: 'Insights', items: [NAV_ITEMS.links] }
 ]
 

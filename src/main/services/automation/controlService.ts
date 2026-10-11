@@ -93,6 +93,6 @@ export class AutomationControlService {
   /** At start-up: remind the user that automation was left paused. */
   announceIfPaused(): void {
     if (!this.deps.queue.paused) return
-    this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation is paused', body: 'Scheduled posts wait in the queue until you resume.', to: '/queue' })
+    this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation is paused', body: 'Scheduled posts wait in the queue until you resume.', to: '/campaigns?view=queue' })
   }
 }

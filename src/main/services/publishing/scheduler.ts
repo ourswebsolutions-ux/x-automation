@@ -121,7 +121,7 @@ export class Scheduler {
         event: 'scheduleReminders',
         title: `Post going out at ${at}`,
         body: `A scheduled post for ${account?.label ?? 'an account'} will be published soon.`,
-        to: '/scheduler'
+        to: '/campaigns?view=scheduled'
       })
       this.deps.schedules.markReminded(schedule.id, now.toISOString())
     }
@@ -134,7 +134,7 @@ export class Scheduler {
         event: 'taskFailures',
         title: count === 1 ? 'A scheduled post was missed' : `${count} scheduled posts were missed`,
         body: `${count === 1 ? 'Its' : 'Their'} time passed while X Auto was not running. Choose to publish now, reschedule or cancel.`,
-        to: '/scheduler?view=attention'
+        to: '/campaigns?view=scheduled'
       },
       { key: 'schedules-missed', quietMs: 10 * 60_000 }
     )

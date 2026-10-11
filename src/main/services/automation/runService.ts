@@ -82,23 +82,39 @@ const withContentDefaults = (config: AutomationConfig): AutomationConfig => ({ .
 
 const minutesOf = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5))
 
-/** The posting time for slot `index` of a profile: start + index × interval, inside working hours. */
+/** The first allowed posting moment at or after `at`: on a posting day, inside the posting hours. */
+function nextAllowed(config: AutomationConfig, at: Date): Date {
+  const wh = config.schedule.workingHours
+  const days = config.schedule.days?.length ? config.schedule.days : [0, 1, 2, 3, 4, 5, 6]
+  if (!wh.enabled && days.length === 7) return at
+  const from = wh.enabled ? minutesOf(wh.start) : 0
+  const to = wh.enabled ? minutesOf(wh.end) : 24 * 60
+  let t = new Date(at)
+  for (let guard = 0; guard < 800; guard++) {
+    const minute = t.getHours() * 60 + t.getMinutes()
+    const inHours = !wh.enabled || (from < to ? minute >= from && minute < to : minute >= from || minute < to)
+    if (inHours && days.includes(t.getDay())) return t
+    // Next window start today if it is still ahead (and today is a posting day), else tomorrow's.
+    const next = new Date(t)
+    next.setHours(Math.floor(from / 60), from % 60, 0, 0)
+    if (next <= t || !days.includes(t.getDay())) {
+      next.setDate(next.getDate() + 1)
+      next.setHours(Math.floor(from / 60), from % 60, 0, 0)
+    }
+    t = next
+  }
+  return t
+}
+
+/**
+ * The posting time for slot `index` of a profile. Slots follow each other: each is the first
+ * allowed moment (posting day, posting hours) at least one interval after the previous slot,
+ * so two posts of one account never land on the same time.
+ */
 export function slotTime(config: AutomationConfig, start: Date, index: number): Date {
   const interval = config.schedule.intervalMinutes * 60_000
-  let at = new Date(start.getTime() + index * interval)
-  const wh = config.schedule.workingHours
-  if (!wh.enabled) return at
-  const from = minutesOf(wh.start)
-  const to = minutesOf(wh.end)
-  for (let guard = 0; guard < 400; guard++) {
-    const minute = at.getHours() * 60 + at.getMinutes()
-    if (from < to ? minute >= from && minute < to : minute >= from || minute < to) return at
-    // Move to the next window start, then keep the remaining offset of this slot.
-    const next = new Date(at)
-    next.setHours(Math.floor(from / 60), from % 60, 0, 0)
-    if (next <= at) next.setDate(next.getDate() + 1)
-    at = next
-  }
+  let at = nextAllowed(config, start)
+  for (let i = 0; i < index; i++) at = nextAllowed(config, new Date(at.getTime() + interval))
   return at
 }
 
@@ -271,6 +287,7 @@ export class RunService {
     const start = schedule.when === 'now' ? this.now() : schedule.startAt ? new Date(schedule.startAt) : null
     if (schedule.when === 'schedule' && (!start || start.getTime() < this.now().getTime() - 60_000)) block('Choose a start time in the future.')
     if (schedule.endAt && start && new Date(schedule.endAt) <= start) block('The end time must be after the start time.')
+    if (schedule.days && schedule.days.length === 0) block('Choose at least one posting day.')
     let firstRunAt: string | null = null
     let lastRunAt: string | null = null
     if (publishing && start && posts > 0) {
@@ -293,7 +310,7 @@ export class RunService {
     if (engagementTasks) warn('Reposts, comments and likes are planned as tasks you complete in the profile — X Auto doesn’t do them automatically.')
 
     const summary: string[] = []
-    if (publishing) summary.push(config.mode === 'full-auto' ? 'Publish automatically (Full Auto)' : 'Publish after your approval (Manual Approval)')
+    if (publishing) summary.push(config.mode === 'full-auto' ? 'Publish automatically' : 'Publish after your approval')
     else if (actions.publish || actions.saveDrafts) summary.push('Save as drafts only')
     if (fromDrafts) summary.push(`Post ${fromDrafts} of your drafts${content.source === 'mixed' && generations ? ', then generated posts' : ''}`)
     if (content.source !== 'drafts' && (content.source === 'generate' || generations > 0)) summary.push(content.generateText ? 'Generate text with AI' : 'Use your own text')
@@ -316,7 +333,8 @@ export class RunService {
       posts,
       generations,
       fromDrafts,
-      images: content.generateImages ? generations + usableDrafts.slice(0, fromDrafts).filter((d) => !d.hasMedia).length : 0,
+      // Generated images, or (campaigns from saved posts) the posts that already carry an image.
+      images: content.generateImages ? generations + usableDrafts.slice(0, fromDrafts).filter((d) => !d.hasMedia).length : usableDrafts.slice(0, fromDrafts).filter((d) => d.hasMedia).length,
       engagementTasks,
       firstRunAt,
       lastRunAt,
@@ -404,7 +422,7 @@ export class RunService {
     const engagementCount = this.planEngagement(runId, config, targets)
 
     if (this.deps.queue.paused && publishing && config.mode === 'full-auto') this.deps.queue.resume()
-    this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation started', body: this.startBody(plan, engagementCount), to: '/automation' })
+    this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation started', body: this.startBody(plan, engagementCount), to: '/campaigns' })
     if (plan.profiles.unavailable) {
       this.deps.notifier.notify({ tone: 'warning', event: 'taskFailures', title: `${plan.profiles.unavailable} ${plan.profiles.unavailable === 1 ? 'profile is' : 'profiles are'} unavailable`, body: 'They were left out of this run.', to: '/accounts?view=profiles' })
     }
@@ -418,7 +436,7 @@ export class RunService {
     if (!ACTIVE.includes(run.status) && run.status !== 'publishing') throw new ConflictError('This run is not active.')
     this.setStatus(runId, 'paused', 'Paused by you.')
     this.deps.queue.pause()
-    this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation paused', body: 'Waiting posts stay in the queue until you resume.', to: '/automation' })
+    this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation paused', body: 'Waiting posts stay in the queue until you resume.', to: '/campaigns' })
     return this.details(runId).run
   }
 
@@ -429,7 +447,7 @@ export class RunService {
     this.deps.db.run("UPDATE run_items SET status = 'pending', updated_at = :now WHERE run_id = :runId AND status = 'generating'", { runId, now: this.now().toISOString() })
     this.setStatus(runId, 'generating', null)
     this.deps.queue.resume()
-    this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation resumed', to: '/automation' })
+    this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation resumed', to: '/campaigns' })
     void this.process(runId)
     return this.details(runId).run
   }
@@ -459,7 +477,7 @@ export class RunService {
       }
     }
     this.finish(runId, 'stopped')
-    this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation stopped', body: cancelled ? `${cancelled} waiting ${cancelled === 1 ? 'post was' : 'posts were'} cancelled and returned to your drafts.` : undefined, to: '/automation' })
+    this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation stopped', body: cancelled ? `${cancelled} waiting ${cancelled === 1 ? 'post was' : 'posts were'} cancelled and returned to your drafts.` : undefined, to: '/campaigns' })
     return this.details(runId).run
   }
 
@@ -538,7 +556,7 @@ export class RunService {
       this.setStatus(id, 'paused', 'Paused because X Auto closed while posts were being prepared.')
     }
     if (runs.length) {
-      this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation paused', body: 'X Auto closed while posts were being prepared. Resume the run to continue.', to: '/automation' })
+      this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation paused', body: 'X Auto closed while posts were being prepared. Resume the run to continue.', to: '/campaigns' })
     }
     for (const r of this.deps.db.all<{ id: string }>("SELECT id FROM automation_runs WHERE status = 'publishing'")) this.checkFinished(r.id)
   }
@@ -619,7 +637,7 @@ export class RunService {
               event: 'systemNotices',
               title: withImages ? `${made} ${made === 1 ? 'post' : 'posts'} generated with images` : `${made} ${made === 1 ? 'post' : 'posts'} generated and saved`,
               body: config.mode === 'manual-approval' && config.actions.publish && config.targets.distribution !== 'drafts' ? 'Waiting for your approval.' : undefined,
-              to: '/automation'
+              to: '/campaigns'
             },
             { key: `run-progress:${runId}`, quietMs: 30_000 }
           )
@@ -664,7 +682,7 @@ export class RunService {
           event: 'systemNotices',
           title: `${made} of your ${made === 1 ? 'draft is' : 'drafts are'} ready`,
           body: config.mode === 'manual-approval' ? 'Waiting for your approval.' : undefined,
-          to: '/automation'
+          to: '/campaigns'
         },
         { key: `run-progress:${runId}`, quietMs: 30_000 }
       )
@@ -964,7 +982,7 @@ export class RunService {
 
   private pauseFor(runId: Id, message: string): void {
     this.setStatus(runId, 'paused', message)
-    this.deps.notifier.notify({ tone: 'warning', event: 'taskFailures', title: 'Automation paused', body: message, to: '/automation' }, { key: `run-paused:${runId}`, quietMs: 60_000 })
+    this.deps.notifier.notify({ tone: 'warning', event: 'taskFailures', title: 'Automation paused', body: message, to: '/campaigns' }, { key: `run-paused:${runId}`, quietMs: 60_000 })
   }
 
   private afterItemsChanged(runId: Id): void {
@@ -976,7 +994,7 @@ export class RunService {
       if (run.status !== 'awaiting-approval') {
         this.setStatus(runId, 'awaiting-approval', null)
         const n = items.filter((i) => i.status === 'awaiting-approval').length
-        this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: `${n} ${n === 1 ? 'post is' : 'posts are'} ready for your approval`, to: '/automation' })
+        this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: `${n} ${n === 1 ? 'post is' : 'posts are'} ready for your approval`, to: '/campaigns' })
       }
       return this.deps.onChange()
     }
@@ -1018,7 +1036,7 @@ export class RunService {
         ]
           .filter(Boolean)
           .join(' · ') || undefined,
-        to: '/automation'
+        to: '/campaigns'
       })
     }
     this.deps.onChange()

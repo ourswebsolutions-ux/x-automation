@@ -66,7 +66,9 @@ export const automationConfigSchema = z
         intervalMinutes: z.number().int().min(0).max(1440),
         postsPerProfile: z.number().int().min(1).max(50),
         maxPostsPerRun: z.number().int().min(1).max(500),
-        workingHours: z.object({ enabled: z.boolean(), start: time, end: time }).strict()
+        workingHours: z.object({ enabled: z.boolean(), start: time, end: time }).strict(),
+        // Older configs have no posting days: every day.
+        days: z.array(z.number().int().min(0).max(6)).max(7).default([0, 1, 2, 3, 4, 5, 6])
       })
       .strict(),
     failure: z

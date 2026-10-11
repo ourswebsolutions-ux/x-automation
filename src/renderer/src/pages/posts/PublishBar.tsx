@@ -1,9 +1,10 @@
-import { CalendarClock, ExternalLink, ListChecks, PencilLine, RotateCw, Send, X } from 'lucide-react'
+import { CalendarClock, ExternalLink, ListChecks, PencilLine, RotateCw, Send, Workflow, X } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { Account } from '@shared/types/accounts'
 import type { Draft } from '@shared/types/domain'
 import { Button, ConfirmDialog, Spinner, StatusBadge, Tooltip, useToast } from '@/components/ui'
+import { PublishDialog } from '@/components/feature/PublishDialog'
 import { ScheduleDialog, type ScheduleMode } from '@/components/feature/ScheduleDialog'
 import { useDraftSchedule } from '@/data/publishing'
 import { errorMessage, relay } from '@/lib/bridge'
@@ -13,28 +14,39 @@ import { SCHEDULE_STATUS } from '@/lib/status'
 interface PublishActionsProps {
   draft: Draft
   dirty: boolean
+  /** False once the post is scheduled or published: the buttons hide, an open dialog stays. */
+  editable?: boolean
   accountId: string | null
   accounts: Account[]
 }
 
-/** "Schedule…" and "Publish now" for a saved, editable draft. */
-export function PublishActions({ draft, dirty, accountId, accounts }: PublishActionsProps) {
-  const [mode, setMode] = useState<ScheduleMode | null>(null)
+/** "Publish now" (all or selected accounts) and "Use in a campaign" for a saved, editable post. */
+export function PublishActions({ draft, dirty, editable = true, accountId, accounts }: PublishActionsProps) {
+  const navigate = useNavigate()
+  const [publishing, setPublishing] = useState(false)
   const blocked = dirty ? 'Save your changes first' : null
-  const action = (m: ScheduleMode, label: string, icon: typeof Send) => (
-    <Tooltip content={blocked ?? ''} disabled={!blocked}>
-      <span>
-        <Button size="sm" variant="secondary" icon={icon} disabled={Boolean(blocked)} onClick={() => setMode(m)}>
-          {label}
-        </Button>
-      </span>
-    </Tooltip>
-  )
+  // One stable tree: the buttons come and go, the dialog keeps its place (and its progress).
   return (
     <>
-      {action('schedule', 'Schedule…', CalendarClock)}
-      {action('publish-now', 'Publish now', Send)}
-      <ScheduleDialog open={mode !== null} mode={mode ?? 'schedule'} draftId={draft.id} accountId={accountId} accounts={accounts} onClose={() => setMode(null)} />
+      {editable && (
+        <>
+          <Tooltip content={blocked ?? 'Keep this post and choose it in a campaign'}>
+            <span>
+              <Button size="sm" variant="secondary" icon={Workflow} disabled={Boolean(blocked)} onClick={() => navigate(`/campaigns?draft=${draft.id}`)}>
+                Use in a campaign
+              </Button>
+            </span>
+          </Tooltip>
+          <Tooltip content={blocked ?? ''} disabled={!blocked}>
+            <span>
+              <Button size="sm" variant="primary" icon={Send} disabled={Boolean(blocked)} onClick={() => setPublishing(true)}>
+                Publish now…
+              </Button>
+            </span>
+          </Tooltip>
+        </>
+      )}
+      <PublishDialog open={publishing} draftId={draft.id} defaultAccountId={accountId} accounts={accounts} onClose={() => setPublishing(false)} />
     </>
   )
 }
@@ -119,7 +131,7 @@ export function PublishStatus({ draft, accounts }: { draft: Draft; accounts: Acc
           </Button>
         )}
         {schedule.status === 'needs-review' && (
-          <Button size="sm" variant="secondary" icon={ListChecks} onClick={() => navigate('/queue?view=attention')}>
+          <Button size="sm" variant="secondary" icon={ListChecks} onClick={() => navigate('/campaigns?queue=attention')}>
             Review in the queue
           </Button>
         )}

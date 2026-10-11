@@ -42,7 +42,7 @@ export function AppShell() {
   }, [pathname])
 
   useHotkey('mod+k', () => setPaletteOpen(true), { allowInInputs: true })
-  useHotkey('mod+n', () => navigate('/posts?compose=1'))
+  useHotkey('mod+n', () => navigate('/create'))
   useHotkey('mod+,', () => navigate(settingsPath('general')))
   useHotkey('mod+b', toggleSidebar)
   useHotkey('shift+?', () => setShortcutsOpen(true))

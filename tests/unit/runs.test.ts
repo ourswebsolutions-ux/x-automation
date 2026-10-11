@@ -110,7 +110,7 @@ const base = (): AutomationConfig => ({
   content: { source: 'generate', draftIds: [], prompt: 'Professional technology posts in English', topic: '', language: 'English', tone: 'professional', length: 'short', hashtags: ['tech'], suggestHashtags: false, instructions: '', generateText: true, textProviderId: null, textModel: null, fixedText: '', generateImages: true, imageProviderId: null, imageModel: null, imageStyle: 'illustration', imageSize: '1024x1024', existingAssetId: null },
   targets: { scope: 'all', profileIds: [], distribution: 'unique', allowDuplicates: false, requireConfirmedIdentity: true, createMissingAccounts: false },
   actions: { publish: true, saveDrafts: false, repost: false, comment: false, like: false, engagementLinks: [], commentText: '' },
-  schedule: { when: 'now', startAt: null, endAt: null, intervalMinutes: 0, postsPerProfile: 2, maxPostsPerRun: 50, workingHours: { enabled: false, start: '09:00', end: '18:00' } },
+  schedule: { when: 'now', startAt: null, endAt: null, intervalMinutes: 0, postsPerProfile: 2, maxPostsPerRun: 50, workingHours: { enabled: false, start: '09:00', end: '18:00' }, days: [0, 1, 2, 3, 4, 5, 6] },
   failure: { generationRetries: 1, onTextFailure: 'skip', onImageFailure: 'pause', onProfileUnavailable: 'skip', stopAfterFailures: 0 }
 })
 const itemsOf = (id: string) => runs.details(id).items
@@ -141,6 +141,16 @@ const day = new Date(2026, 9, 12, 11, 30)
 const s1 = slotTime(wh, day, 1)
 check('working hours: a slot outside the window moves to the next window start', s1.getDate() === 13 && s1.getHours() === 9 && s1.getMinutes() === 0, s1.toString())
 check('working hours: a slot inside stays', slotTime(wh, day, 0).getHours() === 11)
+// Posting days (campaign schedule): day = Monday 2026-10-12, 11:30
+const weekdays: AutomationConfig = { ...base(), schedule: { ...base().schedule, intervalMinutes: 60, days: [2, 4], workingHours: { enabled: true, start: '10:00', end: '12:00' } } }
+const d0 = slotTime(weekdays, day, 0)
+check('posting days: Monday start moves to Tuesday at the posting hours start', d0.getDay() === 2 && d0.getHours() === 10 && d0.getMinutes() === 0, d0.toString())
+const d2 = slotTime(weekdays, day, 3)
+check('posting days: later slots skip to the next posting day (Thursday)', d2.getDay() === 4 && d2.getHours() >= 10 && d2.getHours() < 12, d2.toString())
+const anyTime: AutomationConfig = { ...base(), schedule: { ...base().schedule, intervalMinutes: 0, days: [0, 6], workingHours: { enabled: false, start: '09:00', end: '18:00' } } }
+check('posting days without hours: next Saturday at midnight', slotTime(anyTime, day, 0).getDay() === 6 && slotTime(anyTime, day, 0).getHours() === 0)
+check('every day selected: time unchanged', slotTime({ ...base(), schedule: { ...base().schedule, days: [0, 1, 2, 3, 4, 5, 6] } }, day, 0).getTime() === day.getTime())
+check('no posting day chosen → blocked', runs.plan({ ...base(), schedule: { ...base().schedule, days: [] } }).problems.some((p) => p.blocking && p.message.includes('posting day')))
 
 // ── Full Auto: generate, attach, schedule, publish — no per-post confirmation ──
 const run1 = await runs.start(base())
@@ -251,6 +261,14 @@ const fromDraftsCfg = (patch: Partial<AutomationConfig['content']> = {}): Automa
 plan = runs.plan(fromDraftsCfg())
 check('drafts: plan posts your drafts, generates nothing', plan.ok && plan.fromDrafts === 3 && plan.generations === 0 && plan.posts === 3 && plan.images === 0, JSON.stringify({ ...plan, targets: undefined, problems: plan.problems.map((p) => p.message) }))
 check('… warns when there are fewer drafts than slots', plan.problems.some((p) => p.message.includes('Only 3 drafts')))
+{
+  const imgId = randomUUID()
+  assetRepo.insert({ id: imgId, origin: 'upload', originalName: 'p.png', filePath: `2026-10/${imgId}.png`, mimeType: 'image/png', width: 10, height: 10, sizeBytes: 100, sha256: imgId.replace(/-/g, ''), animated: false, prompt: null, generationId: null, kept: true, createdAt: new Date().toISOString() })
+  const withImage = await drafts.save({ body: 'A post that already has a picture', hashtags: [], accountId: null, status: 'draft', attachments: [{ assetId: imgId, altText: '' }] })
+  const pl = runs.plan(fromDraftsCfg({ draftIds: [withImage.id, own[0]!.id] }))
+  check('drafts: the summary counts images already on the chosen posts', pl.ok && pl.images === 1 && pl.fromDrafts === 2, JSON.stringify([pl.images, pl.fromDrafts]))
+  await drafts.remove(withImage.id)
+}
 check('… no AI provider needed', runs.plan({ ...fromDraftsCfg(), content: { ...fromDraftsCfg().content, prompt: '' } }).ok)
 check('drafts: none chosen → blocked', runs.plan(fromDraftsCfg({ draftIds: [] })).problems.some((p) => p.blocking && p.message.includes('Choose the drafts')))
 check('drafts: "save drafts only" makes no sense → blocked', !runs.plan({ ...fromDraftsCfg(), actions: { ...base().actions, publish: false, saveDrafts: true } }).ok)

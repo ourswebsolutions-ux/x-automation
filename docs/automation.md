@@ -1,173 +1,124 @@
-# AI automation (Phase 12)
+# Creating posts and running campaigns
 
-The **Automation** page (Automate → Automation, or *Create automation* on the dashboard) turns one
-description into a run: X Auto writes the posts, optionally generates and attaches an image for
-each, assigns them to IX Browser profiles, and publishes them through the profiles' own signed-in
-sessions. You confirm once, before the run starts.
+Automation lives in two tabs:
 
-## Modes
+- **Create Post** for writing posts.
+- **Campaign Automation** for posting them on a schedule.
 
-| Mode | What happens |
+Dashboard, Accounts & Profiles, Post Links and Settings are separate and unchanged.
+
+## Create Post
+
+Create Post is one page with an **AI Post / Manual Post** toggle. Saved posts are listed on the left.
+
+| | |
 | --- | --- |
-| **Full Auto** (default) | Generate → attach image → save draft → schedule → publish → verify. No confirmation per post. |
-| **Manual Approval** | Generate → attach image → wait. Each post can be approved, edited (opens the editor), regenerated or removed. *Approve all* approves the rest. |
+| **AI Post** | Describe the topic, main message, audience, tone and length, choose the AI provider and model, and generate variations. **Use this post** opens one in the editor (**Save for later** keeps it without opening). Facts in the brief are the only facts the AI may use. |
+| **Manual Post** | Type the post yourself. No AI provider is needed. |
 
-The mode can be switched while a run is active. Switching to Full Auto approves what is waiting.
-Switching to Manual Approval makes posts generated from then on wait. Posts already scheduled stay
-scheduled. Nothing is deleted either way.
+**The editor** is the same for both modes:
 
-## The wizard
+- text, hashtags and the X length meter;
+- images: **Upload**, **Library**, or **Generate** with the image provider;
+- AI editing tools (optional) and a preview;
+- **Save**.
 
-1. **What to post**: choose where the posts come from:
-   - **Generate with AI**, or your own fixed text.
-   - **My drafts**: your existing drafts (status draft or ready, not scheduled), posted in the order
-     you picked them, text unchanged, with no AI request.
-   - **My drafts + AI**: your drafts fill the first posts, and AI writes the rest.
+**For a saved post:**
 
-   Image generation, when on, only adds an image to drafts that don't have one. With "same posts on
-   every profile", the first profile posts the draft and each other profile gets an independent copy.
-   For generated posts, you set: instructions, topic, language, tone, length, hashtags, extra instructions,
-   the text provider and model. You can also turn generation off and post your own text. Images
-   can come from an image provider (style, size) or from a library image attached to every post.
-2. **How posts go out**: Full Auto or Manual Approval.
-3. **Profiles**
-   - **All profiles** (default) means every synced profile, never a guess.
-     - If nothing is synced, the run can't start.
-     - A failed or empty sync never counts as "all".
-   - **Selected profiles** has search, *Select all* and *Deselect all*, an availability badge per
-     profile, and *Refresh*.
-   - The counts ("5 selected · 4 available · 1 unavailable") update live.
-   - Distribution options:
-     - Different posts per profile.
-     - The same posts on every profile. This is off unless repeated content is allowed.
-     - Drafts only.
-   - **Check the signed-in account before posting** is on by default. Only accounts with a
-     confirmed X username are used, and the engine checks the profile is signed in to that
-     username before it posts.
-4. **Actions**: publish, save drafts, repost, comment, like (see *Engagement* below).
-5. **Timing**
-   - Now or a start time, with an optional end time.
-   - Minutes between posts per profile, posts per profile, maximum posts per run.
-   - Working hours.
-6. **When something goes wrong**
-   - Extra generation attempts.
-   - Text failure: skip or pause.
-   - Image failure: pause, skip the post, or publish without the image. The last applies only
-     when chosen.
-   - An unavailable profile: leave it out, or don't start.
-   - Pause after N failed posts in a row.
+- **Publish now…** asks for **All accounts** or **Select accounts**.
+  - All accounts means every account linked to an available IX Browser profile.
+  - Every chosen account is checked first, and at least one account is required.
+  - Posting the same text from several accounts has to be allowed with an explicit switch. Each
+    account gets its own copy of the post.
+  - After sending, the dialog follows each account live: waiting, publishing, published (with
+    **View on X**), failed, or needs review.
+- **Use in a campaign** opens Campaign Automation with the post already selected.
 
-The **Before you start** panel shows the plan as you edit:
+A post that is already scheduled, published or failed shows its status strip in the editor, with
+actions such as changing the time, publishing now, cancelling or returning it to drafts. Posts
+scheduled before this layout existed stay manageable there.
 
-- Eligible profiles out of those selected, and posts, images and timing.
-- The enabled actions.
-- Warnings and blocking problems.
+## Campaign Automation
 
-*Start automation* opens one confirmation, and then the run starts.
+Campaign Automation is the one page for automated posting.
 
-**Presets** save every setting on the page. You can load them from the page header or start one
-from the dashboard.
+1. **Posts.** Choose saved posts (AI or manual) in the order they should be used. Each is posted
+   unchanged. If you have none, **Create a post** opens Create Post.
+2. **Accounts.**
+   - **All profiles** or **Selected profiles** (search, Select all / Deselect all), with live counts
+     such as "5 selected · 4 available · 1 unavailable".
+   - Different posts per profile, or the same posts on every profile (repeated content must be
+     allowed explicitly).
+   - Accounts are checked before posting.
+3. **Schedule.**
+   - Start now, or at a date and time.
+   - End: no end, at a date and time, or after a number of days.
+   - **Posting days**, optional **posting hours**, minutes between posts per account, posts per
+     account, and the most posts in the campaign.
+   - Slots follow each other: each is the first allowed moment at least one interval after the
+     previous one, so an account never gets two posts at the same time.
+4. **How posts go out.**
+   - **Automatically**: each post is published at its time.
+   - **After my approval**: each post waits; you can approve, edit or remove it.
+   - **More options** covers unavailable accounts, pausing after failures in a row, and repost,
+     comment and like *tasks* (done by you, never automatically).
+5. **Before you start.** A live summary shows eligible profiles, posts, timing, the enabled actions,
+   warnings and blocking problems. **Start campaign** asks once to confirm.
 
-## Automation Schedule (recurring)
+**While a campaign runs**, its panel shows:
 
-The **Automation Schedule** page (Automate → Automation Schedule) is separate from the schedules of
-individual posts. A schedule has these settings:
+- status and progress;
+- every post with its account and next posting time, published links, and errors;
+- **Pause**, **Resume** and **Stop**, plus a switch between automatic and approval.
 
-- A name.
-- The automation settings, taken from a preset or the Automation page and copied when saved.
-- A start date and an optional end date.
-- The days of the week.
-- Daily hours (from–until, on the same day).
+**Further down the same page:**
 
-On each chosen day inside the date range, it starts **one** run:
+- **Campaigns:** past and current campaigns; open one to see its details.
+- **Recurring campaigns:** campaigns created earlier that run once per chosen day keep running.
+  You can pause, resume or delete them here.
+- **Scheduled posts:** single scheduled posts and missed slots. Each opens in Create Post.
+- **Posting queue:** every post being published, one account at a time.
+  - Pause, resume or stop all automation.
+  - Posts that need a review (publishing outcome unknown), failures and retries.
+  - Hold and release, and the history of each task.
 
-- The posts are spread inside that day's hours. "Posts per profile" means per day.
-- It runs only once per day, and only one automation runs at a time. If another run is active, it
-  waits and starts when that run is free, as long as the hours are still open.
-- If the app was closed through the whole window, that day is not made up later. The schedule shows
-  a note saying so.
-- If a start is refused (for example, no synced profiles), you get one notification and the reason
-  is shown on the schedule.
-- **Pause** stops new days and also pauses that schedule's run in progress. **Resume** reverses both.
-- After the end date the schedule shows *Ended*. Changing the date reactivates it.
-- Recurring schedules always generate new posts. A fixed set of drafts, or the same fixed text every
-  day, is refused.
+**Saved setups** (from the page header) keep a campaign's posts, accounts and schedule for reuse,
+and start from the dashboard's quick-start buttons. A setup saved before this layout that wrote
+posts with AI is loaded with its accounts and schedule, and a note explains that posts are now
+created in Create Post.
 
-## What a run does
+## How it works underneath (unchanged)
 
-- Posts are generated in small batches. Each text is checked against X's length limit and against
-  every other text in the run, so no duplicates are posted.
-- The prompt asks for original content, no invented facts, statistics or quotes, and no
-  impersonation.
-- **Images**
-  - The image prompt is written from the post text, and the image is generated and validated by its
-    content.
-  - The image is saved in the image library and attached to the draft.
-  - An image counts as "attached" only when the draft really holds it.
-  - Images survive restarts, because the draft and the library keep them.
-- **Full Auto**: posts go to the existing publishing queue (one post at a time per account, with
-  spacing) at their time slots.
-- **Manual Approval**: posts wait for approval.
-- **Publishing** (see [publishing.md](publishing.md)):
-  - IX Browser opens the profile, and the engine checks the signed-in account and posts.
-  - The engine confirms the post from the link X shows.
-  - **If the post may have gone out but X showed no confirmation**, the engine checks the
-    account's profile page for the exact text:
-    - Found: the post is recorded as published, verified by the profile check.
-    - Not found: the post goes to **needs review** and is never retried on its own.
-- **Pause** stops new generation and pauses the publishing queue, so no new post starts. It is the
-  same pause as in the Task Queue. **Resume** continues.
-- **Stop** ends the run:
-  - Posts waiting for their time are cancelled and returned to your drafts.
-  - Posts waiting for approval are kept as drafts.
-  - A post being published right now finishes.
-- **Restart**: an app closed mid-run resumes as *paused* (generation) or keeps waiting
-  (approvals). Scheduled posts stay in the persistent queue.
-- **Posts only go out while X Auto is running.** Missed slots are handled as described in
-  publishing.md.
+**Publishing:**
 
-## Engagement
+- Campaigns run on the existing automation runs, and single posts on the publishing queue.
+- IX Browser opens a profile only when its post is due, and closes it afterwards. The engine checks
+  the signed-in account, posts, and confirms the post link.
+- If X shows no confirmation, the engine looks for the post on the profile before asking you; it
+  never retries blindly (see [publishing.md](publishing.md)).
+- Posts only go out while X Auto is running.
 
-Reposts, comments and likes are **planned as tasks you complete yourself** in the profile
-(Post Links → Engagement):
+**Data:**
 
-- One task per account per post per kind, only for the actions you turned on.
-- Comment text is the text you wrote.
-- The existing guardrails against self-amplification, coordinated and duplicate engagement and the
-  daily limit apply.
+- Nothing was deleted by the consolidation. Drafts, accounts, campaigns (runs), saved setups
+  (presets), recurring campaigns and schedules are all kept.
+- Migration `012` added posting days to the campaign schedule (default: every day), the recurring
+  schedules table, and the link from a campaign post to the saved post it came from.
 
-X Auto does not like, repost or reply automatically. X's rules prohibit artificial or
-coordinated engagement, and automated replies can't be made genuinely original for posts the app
-hasn't read.
+**Old addresses still work** (bookmarks, notifications):
 
-## Notifications
-
-A run reports in plain words, with no codes or technical details:
-
-- "Automation started"
-- "4 posts generated and saved" or "… generated with images"
-- "4 posts are ready for your approval"
-- "Post published"
-- "1 profile is unavailable"
-- "Publishing outcome needs review"
-- "AI provider connection failed. Check settings."
-- "Image provider request failed. Check settings."
-- "Automation paused", "Automation resumed", "Automation stopped", "Automation finished"
-
-## Data
-
-Migration `011_automation_runs` adds three tables: `prompt_presets`, `automation_runs` (the config
-snapshot, status and message) and `run_items` (one row per post or engagement task). A run item
-links to its draft, account, image and schedule. Publishing state is read live from the queue, so
-the run view always matches the Task Queue.
-
-Migration `012_automation_schedules` adds three things: the `automation_schedules` table,
-`automation_runs.schedule_id` (the schedule that started a run) and `run_items.source_draft_id` (the
-draft a post came from).
+| Old address | Now opens |
+| --- | --- |
+| `/posts` | Create Post |
+| `/generator` | Create Post in AI mode |
+| `/automation` | Campaign Automation |
+| `/automation-schedule` | Campaign Automation |
+| `/scheduler` | Campaign Automation, at Scheduled posts |
+| `/queue` | Campaign Automation, at the Posting queue |
 
 ## Verification status
 
-- Verified end to end:
+- **Verified end to end:**
   - The real app, the bundled Python engine and real Chrome, with three Chromes as three profiles'
     browsers.
   - A local stand-in for X's composer and profile pages.

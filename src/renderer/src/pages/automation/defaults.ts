@@ -3,10 +3,11 @@ import type { AutomationConfig } from '@shared/types/automation'
 /** A new automation: Full Auto, All Profiles, text on, images off, published now. */
 export function defaultConfig(): AutomationConfig {
   return {
-    name: 'My automation',
+    name: 'My campaign',
     mode: 'full-auto',
     content: {
-      source: 'generate',
+      // Campaigns post saved posts (created in Create Post).
+      source: 'drafts',
       draftIds: [],
       prompt: '',
       topic: '',
@@ -29,7 +30,7 @@ export function defaultConfig(): AutomationConfig {
     },
     targets: { scope: 'all', profileIds: [], distribution: 'unique', allowDuplicates: false, requireConfirmedIdentity: true, createMissingAccounts: false },
     actions: { publish: true, saveDrafts: false, repost: false, comment: false, like: false, engagementLinks: [], commentText: '' },
-    schedule: { when: 'now', startAt: null, endAt: null, intervalMinutes: 30, postsPerProfile: 1, maxPostsPerRun: 20, workingHours: { enabled: false, start: '09:00', end: '18:00' } },
+    schedule: { when: 'now', startAt: null, endAt: null, intervalMinutes: 30, postsPerProfile: 1, maxPostsPerRun: 20, workingHours: { enabled: false, start: '09:00', end: '18:00' }, days: [0, 1, 2, 3, 4, 5, 6] },
     failure: { generationRetries: 1, onTextFailure: 'skip', onImageFailure: 'pause', onProfileUnavailable: 'skip', stopAfterFailures: 3 }
   }
 }

@@ -1,6 +1,6 @@
 # Automation controls, notifications, usage and backups (Phases 10 + 11)
 
-## Automation controls (Task Queue → control centre)
+## Automation controls (Campaign Automation → posting queue → control centre)
 
 - **State**: Running (a task is in progress), Ready (nothing due) or Paused. Also shown in the
   status bar.

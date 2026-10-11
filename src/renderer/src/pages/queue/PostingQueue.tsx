@@ -2,7 +2,7 @@ import { CircleCheck, CircleDashed, CircleX, ExternalLink, FileText, ListChecks,
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { QueueQuery, TaskRunView, TaskView } from '@shared/types/publishing'
-import { Button, ConfirmDialog, DataTable, EmptyState, IconButton, PageHeader, Panel, SearchField, Skeleton, StatusBadge, Tabs, useToast, type Column } from '@/components/ui'
+import { Button, ConfirmDialog, DataTable, EmptyState, IconButton, Panel, SearchField, Skeleton, StatusBadge, Tabs, useToast, type Column } from '@/components/ui'
 import { ReviewDialog } from '@/components/feature/ReviewDialog'
 import { useAutomation, useQueue, useQueueCounts, useTaskDetails } from '@/data/publishing'
 import { ControlCenter } from './ControlCenter'
@@ -31,10 +31,15 @@ function when(t: TaskView): string {
   return t.finishedAt ? formatRelative(t.finishedAt) : formatRelative(t.createdAt)
 }
 
-export function QueuePage() {
+/**
+ * The posting queue — every post X Auto publishes (single posts and campaign posts) runs here, one
+ * account at a time: pause / resume / stop, posts that need a review, retries, hold and release.
+ * Shown as a section of Campaign Automation.
+ */
+export function PostingQueue() {
   const navigate = useNavigate()
   const toast = useToast()
-  const [viewParam, setViewParam] = useQueryParam('view')
+  const [viewParam, setViewParam] = useQueryParam('queue')
   const view: View = VIEWS.includes(viewParam as View) ? (viewParam as View) : 'active'
   const [query, setQuery] = useState('')
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -111,19 +116,17 @@ export function QueuePage() {
   ]
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={NAV_ITEMS.queue.label}
-        description="Every post X Auto publishes runs here, one account at a time."
-        meta={
-          c && (
-            <span className="flex items-center gap-2 text-xs text-fg-subtle">
-              {c.running > 0 && <StatusBadge tone="info" dot pulse>{`${c.running} running`}</StatusBadge>}
-              {c.queued > 0 && <span>{c.queued} waiting</span>}
-            </span>
-          )
-        }
-      />
+    <section id="posting-queue" aria-label="Posting queue" className="flex flex-col gap-4 scroll-mt-4">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <h2 className="text-sm font-medium text-fg">Posting queue</h2>
+        <span className="text-xs text-fg-subtle">Every post X Auto publishes runs here, one account at a time.</span>
+        {c && (
+          <span className="ml-auto flex items-center gap-2 text-xs text-fg-subtle">
+            {c.running > 0 && <StatusBadge tone="info" dot pulse>{`${c.running} running`}</StatusBadge>}
+            {c.queued > 0 && <span>{c.queued} waiting</span>}
+          </span>
+        )}
+      </header>
 
       <ControlCenter snapshot={automation.data} onChange={automation.reload} />
 
@@ -161,11 +164,11 @@ export function QueuePage() {
                   size="sm"
                   icon={view === 'attention' ? SearchCheck : ListChecks}
                   title={query ? 'No tasks match' : view === 'attention' ? 'Nothing needs your attention' : view === 'active' ? 'Nothing is waiting' : 'No tasks yet'}
-                  description={query ? 'Try a different search.' : view === 'active' ? 'Schedule a post or choose Publish now on a draft.' : undefined}
+                  description={query ? 'Try a different search.' : view === 'active' ? 'Publish a post from Create Post, or start a campaign.' : undefined}
                   actions={
                     view === 'active' && !query ? (
-                      <Button size="sm" icon={FileText} onClick={() => navigate('/posts')}>
-                        Go to drafts
+                      <Button size="sm" icon={FileText} onClick={() => navigate(NAV_ITEMS.create.path)}>
+                        Create a post
                       </Button>
                     ) : undefined
                   }
@@ -182,7 +185,7 @@ export function QueuePage() {
           onCancel={setCancelling}
           onRetry={(t) => act(() => relay.queue.retry(t.id), 'Retrying', 'It will run again shortly.')}
           onHold={(t, held) => act(() => (held ? relay.control.hold(t.id) : relay.control.release(t.id)), held ? 'Put on hold' : 'Released', held ? 'It stays in the queue until you release it.' : undefined)}
-          onOpenDraft={(t) => t.draftId && navigate(`/posts?draft=${t.draftId}`)}
+          onOpenDraft={(t) => t.draftId && navigate(`${NAV_ITEMS.create.path}?draft=${t.draftId}`)}
         />
       </div>
 
@@ -213,7 +216,7 @@ export function QueuePage() {
           })()
         }}
       />
-    </div>
+    </section>
   )
 }
 

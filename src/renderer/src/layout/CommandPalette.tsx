@@ -84,7 +84,7 @@ export function CommandPalette() {
         keywords: nav.keywords.join(' '),
         run: go(nav.path)
       })),
-      { id: 'act-draft', group: 'Actions', label: 'New draft', hint: 'Write a post', icon: SquarePen, keywords: 'compose write tweet create', run: go('/posts?compose=1') },
+      { id: 'act-draft', group: 'Actions', label: 'New post', hint: 'Write a post', icon: SquarePen, keywords: 'compose write tweet create draft', run: go('/create') },
       {
         id: 'act-theme',
         group: 'Actions',
@@ -134,7 +134,7 @@ export function CommandPalette() {
         label: draft.body.replace(/\s+/g, ' ').slice(0, 80),
         hint: 'Session draft',
         icon: FileText,
-        run: go(`/posts?draft=${draft.id}`)
+        run: go(`/create?draft=${draft.id}`)
       }))
     ]
     if (preferences.showDemoData) {

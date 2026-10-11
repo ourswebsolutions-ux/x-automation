@@ -169,7 +169,7 @@ export function RunPanel({ runId }: { runId: string }) {
                       <Button size="sm" variant="secondary" icon={CheckCheck} loading={busy === `a:${i.id}`} onClick={() => act(`a:${i.id}`, () => relay.runs.approve(run.id, [i.id]), 'Approved')}>
                         Approve
                       </Button>
-                      <IconButton icon={PencilLine} label="Edit" size="sm" onClick={() => i.draftId && navigate(`/posts?draft=${i.draftId}`)} />
+                      <IconButton icon={PencilLine} label="Edit" size="sm" onClick={() => i.draftId && navigate(`/create?draft=${i.draftId}`)} />
                       {!i.fromDraft && <IconButton icon={RotateCw} label="Regenerate" size="sm" onClick={() => act(`r:${i.id}`, () => relay.runs.regenerate(run.id, i.id), 'New version generated')} />}
                       <IconButton icon={Trash2} label="Remove" size="sm" onClick={() => act(`d:${i.id}`, () => relay.runs.remove(run.id, [i.id]))} />
                     </>
@@ -181,7 +181,7 @@ export function RunPanel({ runId }: { runId: string }) {
                     </Button>
                   )}
                   {i.scheduleStatus === 'needs-review' && (
-                    <Button size="sm" variant="ghost" onClick={() => navigate('/queue?view=attention')}>
+                    <Button size="sm" variant="ghost" onClick={() => document.getElementById('posting-queue')?.scrollIntoView({ behavior: 'smooth' })}>
                       Review
                     </Button>
                   )}

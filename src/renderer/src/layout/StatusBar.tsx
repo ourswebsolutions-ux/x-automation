@@ -52,7 +52,7 @@ export function StatusBar() {
       {auto && (
         <button
           type="button"
-          onClick={() => navigate('/queue')}
+          onClick={() => navigate('/campaigns?view=queue')}
           className="flex h-5 items-center gap-1.5 rounded-xs px-1.5 transition-colors hover:bg-neutral-soft hover:text-fg-muted focus-ring"
         >
           <StatusDot tone={auto.tone} />

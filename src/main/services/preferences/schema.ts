@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ROUTE_IDS } from '@shared/config/navigation'
+import { LEGACY_ROUTES, ROUTE_IDS } from '@shared/config/navigation'
 import { DEFAULT_PREFERENCES } from '@shared/config/app'
 import { LOG_RETENTION_DAYS } from '@shared/types/preferences'
 
@@ -11,8 +11,12 @@ export const preferencesSchema = z.object({
   sidebarCollapsed: z.boolean(),
   showDemoData: z.boolean(),
   reduceMotion: z.boolean(),
-  // A start page that no longer exists (e.g. the removed logs page) falls back to the dashboard.
-  startPage: z.enum(ROUTE_IDS).catch('dashboard'),
+  // A start page that no longer exists (e.g. the removed logs page) falls back to the dashboard;
+  // a merged page becomes the page that now holds it.
+  startPage: z
+    .enum(ROUTE_IDS)
+    .catch('dashboard')
+    .transform((id) => LEGACY_ROUTES[id] ?? id),
   startup: z.object({ launchAtLogin: z.boolean(), restoreWindow: z.boolean() }).strict(),
   confirmations: z.object({ deleteDraft: z.boolean(), discardChanges: z.boolean() }).strict(),
   retention: z.object({ logDays: z.literal([...LOG_RETENTION_DAYS]) }).strict(),

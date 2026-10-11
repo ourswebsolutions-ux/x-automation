@@ -157,7 +157,7 @@ export class AutomationScheduleService {
         // The run finished in the meantime.
       }
     }
-    this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation schedule paused', body: `“${row.name}” won’t start new runs until you resume it.`, to: '/automation/schedules' })
+    this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation schedule paused', body: `“${row.name}” won’t start new runs until you resume it.`, to: '/campaigns' })
     this.deps.onChange()
     return this.get(id)
   }
@@ -174,7 +174,7 @@ export class AutomationScheduleService {
         // Not resumable any more.
       }
     }
-    this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation schedule resumed', body: `“${row.name}” runs on its next day and time.`, to: '/automation/schedules' })
+    this.deps.notifier.notify({ tone: 'info', event: 'systemNotices', title: 'Automation schedule resumed', body: `“${row.name}” runs on its next day and time.`, to: '/campaigns' })
     this.deps.onChange()
     void this.tick()
     return this.get(id)
@@ -280,7 +280,7 @@ export class AutomationScheduleService {
       const reason = error instanceof Error ? error.message : 'It could not start.'
       this.setFields(row.id, { last_run_date: today, last_message: `Didn’t run on ${today}: ${reason}` })
       this.deps.notifier.notify(
-        { tone: 'warning', event: 'taskFailures', title: 'Scheduled automation didn’t start', body: `“${row.name}”: ${reason}`, to: '/automation/schedules' },
+        { tone: 'warning', event: 'taskFailures', title: 'Scheduled automation didn’t start', body: `“${row.name}”: ${reason}`, to: '/campaigns' },
         { key: `schedule-failed:${row.id}:${today}` }
       )
     }
