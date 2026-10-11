@@ -1,0 +1,96 @@
+/*
+ * Design tokens. Components reference these through Tailwind utilities only
+ * (bg-surface-2, text-fg-muted, border-line …). Adding a theme means
+ * redefining this set — no component changes.
+ *
+ * Palette: warm graphite neutrals, a single copper accent, and muted status
+ * hues tuned to sit at similar perceived brightness.
+ */
+
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --canvas: #0c0d0f;
+  --surface-1: #111214;
+  --surface-2: #16171a;
+  --surface-3: #1c1d21;
+  --surface-4: #232428;
+  --overlay: #18191c;
+
+  --line: rgb(255 255 255 / 0.06);
+  --line-strong: rgb(255 255 255 / 0.1);
+  --line-heavy: rgb(255 255 255 / 0.16);
+
+  --fg: #ebe9e5;
+  --fg-muted: #a2a09a;
+  --fg-subtle: #74726d;
+  --fg-faint: #4f4e4b;
+
+  --accent: #df8550;
+  --accent-hover: #e8956a;
+  --accent-fg: #1b0f07;
+  --accent-soft: rgb(223 133 80 / 0.12);
+  --accent-line: rgb(223 133 80 / 0.4);
+  --accent-text: #eba27a;
+
+  --success: #5db48a;
+  --success-soft: rgb(93 180 138 / 0.12);
+  --warning: #d5aa4f;
+  --warning-soft: rgb(213 170 79 / 0.12);
+  --danger: #df6259;
+  --danger-soft: rgb(223 98 89 / 0.12);
+  --info: #80a5d4;
+  --info-soft: rgb(128 165 212 / 0.12);
+  --neutral-soft: rgb(255 255 255 / 0.06);
+
+  --scrim: rgb(4 4 5 / 0.64);
+  --highlight: rgb(255 255 255 / 0.035);
+  --shadow-raised: inset 0 1px 0 0 rgb(255 255 255 / 0.03), 0 1px 2px 0 rgb(0 0 0 / 0.35);
+  --shadow-popover: 0 0 0 1px var(--line-strong), 0 16px 40px -12px rgb(0 0 0 / 0.7), 0 4px 12px -4px rgb(0 0 0 / 0.5);
+  --shadow-dialog: 0 0 0 1px var(--line-strong), 0 32px 80px -24px rgb(0 0 0 / 0.85);
+}
+
+/* Light theme — complete token set, offered as a preview in Phase 1. */
+[data-theme='light'] {
+  color-scheme: light;
+
+  --canvas: #f4f3ef;
+  --surface-1: #eeede8;
+  --surface-2: #fbfaf8;
+  --surface-3: #efeee9;
+  --surface-4: #e5e3dd;
+  --overlay: #fdfcfa;
+
+  --line: rgb(28 25 20 / 0.08);
+  --line-strong: rgb(28 25 20 / 0.13);
+  --line-heavy: rgb(28 25 20 / 0.22);
+
+  --fg: #1d1c1a;
+  --fg-muted: #5c5a55;
+  --fg-subtle: #87857f;
+  --fg-faint: #b4b2ab;
+
+  --accent: #c2622b;
+  --accent-hover: #ae5420;
+  --accent-fg: #fffaf6;
+  --accent-soft: rgb(194 98 43 / 0.1);
+  --accent-line: rgb(194 98 43 / 0.45);
+  --accent-text: #a6511f;
+
+  --success: #2f8a5e;
+  --success-soft: rgb(47 138 94 / 0.1);
+  --warning: #a77a17;
+  --warning-soft: rgb(167 122 23 / 0.12);
+  --danger: #c2443b;
+  --danger-soft: rgb(194 68 59 / 0.1);
+  --info: #3f6fa8;
+  --info-soft: rgb(63 111 168 / 0.1);
+  --neutral-soft: rgb(28 25 20 / 0.06);
+
+  --scrim: rgb(30 28 24 / 0.32);
+  --highlight: rgb(255 255 255 / 0.7);
+  --shadow-raised: 0 1px 0 0 rgb(255 255 255 / 0.8) inset, 0 1px 2px 0 rgb(28 25 20 / 0.08);
+  --shadow-popover: 0 0 0 1px var(--line-strong), 0 16px 40px -12px rgb(28 25 20 / 0.22), 0 4px 12px -4px rgb(28 25 20 / 0.1);
+  --shadow-dialog: 0 0 0 1px var(--line-strong), 0 32px 80px -24px rgb(28 25 20 / 0.35);
+}

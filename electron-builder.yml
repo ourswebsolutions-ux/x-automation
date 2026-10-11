@@ -1,0 +1,34 @@
+appId: com.axoraweb.relay
+productName: Axora Relay
+copyright: Copyright © 2026 AxoraWeb
+directories:
+  output: release/${version}
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+asar: true
+# The Python automation engine and its bundled runtime (see docs/automation-engine.md).
+# engine-runtime/<os> is produced by `npm run engine:prepare -- --platform=win|linux`.
+extraResources:
+  - from: engine
+    to: engine
+    filter: ['**/*', '!tests/**', '!**/__pycache__/**', '!**/*.pyc']
+  - from: engine-runtime/${os}
+    to: engine-runtime
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.png
+  artifactName: ${productName}-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Axora Relay
+linux:
+  target: [dir]
+  icon: build/icon.png

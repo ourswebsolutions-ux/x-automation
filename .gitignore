@@ -1,0 +1,15 @@
+node_modules/
+out/
+release/
+dist/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+
+# Bundled Python runtime for the automation engine (prepared by npm run engine:prepare)
+engine-runtime/
+__pycache__/
+*.pyc
