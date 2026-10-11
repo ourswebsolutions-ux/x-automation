@@ -194,12 +194,12 @@ async function bootstrap(): Promise<void> {
   current.scheduler.start()
   current.control.announceIfPaused()
   current.runs.recover()
-  current.automationSchedules.start()
+  // Recurring schedules are no longer offered (campaigns run once, at their run time); their records
+  // are kept, but they don't start runs any more.
   current.backup.startSchedule()
   current.updates.start()
   powerMonitor.on('resume', () => {
     services?.scheduler.tick()
-    void services?.automationSchedules.tick()
   })
 
   app.on('activate', () => {

@@ -40,58 +40,50 @@ scheduled before this layout existed stay manageable there.
 
 ## Campaign Automation
 
-Campaign Automation is the one page for automated posting.
+The campaign form has four choices and one button.
 
-1. **Posts.** Choose saved posts (AI or manual) in the order they should be used. Each is posted
-   unchanged. If you have none, **Create a post** opens Create Post.
-2. **Accounts.**
-   - **All profiles** or **Selected profiles** (search, Select all / Deselect all), with live counts
-     such as "5 selected · 4 available · 1 unavailable".
-   - Different posts per profile, or the same posts on every profile (repeated content must be
-     allowed explicitly).
-   - Accounts are checked before posting.
-3. **Schedule.**
-   - Start now, or at a date and time.
-   - End: no end, at a date and time, or after a number of days.
-   - **Posting days**, optional **posting hours**, minutes between posts per account, posts per
-     account, and the most posts in the campaign.
-   - Slots follow each other: each is the first allowed moment at least one interval after the
-     previous one, so an account never gets two posts at the same time.
-4. **How posts go out.**
-   - **Automatically**: each post is published at its time.
-   - **After my approval**: each post waits; you can approve, edit or remove it.
-   - **More options** covers unavailable accounts, pausing after failures in a row, and repost,
-     comment and like *tasks* (done by you, never automatically).
-5. **Before you start.** A live summary shows eligible profiles, posts, timing, the enabled actions,
-   warnings and blocking problems. **Start campaign** asks once to confirm.
+1. **Action:**
+   - **Post** publishes your saved posts.
+   - **Repost** plans repost tasks: X Auto opens the post in the profile for you, and you repost
+     it. Reposts are never automated, and only one of your accounts gets each post, because several
+     of your accounts reposting the same post is coordinated engagement.
+2. **Profiles:** **All profiles** or **Select profiles** (search, Select all / Deselect all), with
+   live counts. The signed-in X account is always checked before posting; unavailable profiles and
+   accounts without a confirmed username are left out.
+3. **Posts:**
+   - For Post, choose saved posts (AI or manual, from Create Post). They are shared out, one profile
+     each, unless you turn on **Post each one from every selected profile** (repeated content, which
+     X can limit).
+   - For Repost, choose posts from the Post Links library.
+4. **Run time:** **Now**, or **at a date and time**. For reposts, the run time becomes the task's
+   due time.
 
-**While a campaign runs**, its panel shows:
+**Start campaign** starts it in one click. Blocking problems (no posts, no usable profile, a time in
+the past) are shown above the button.
 
-- status and progress;
-- every post with its account and next posting time, published links, and errors;
-- **Pause**, **Resume** and **Stop**, plus a switch between automatic and approval.
+**While it runs**, the campaign shows **Running**, **Completed** or **Failed**, a progress bar, and
+the result for each profile and action: published (with **View on X**), failed, waiting, or repost
+task for you. **Stop** cancels posts that haven't started; they go back to your posts.
 
-**Further down the same page:**
+**Further down the page:**
 
-- **Campaigns:** past and current campaigns; open one to see its details.
-- **Recurring campaigns:** campaigns created earlier that run once per chosen day keep running.
-  You can pause, resume or delete them here.
-- **Scheduled posts:** single scheduled posts and missed slots. Each opens in Create Post.
-- **Posting queue:** every post being published, one account at a time.
-  - Pause, resume or stop all automation.
-  - Posts that need a review (publishing outcome unknown), failures and retries.
-  - Hold and release, and the history of each task.
+- **Needs your attention:** posts X didn't confirm (check whether they went out, never retried
+  blindly), failed posts with **Retry**, and **Resume publishing** if publishing was paused.
+- **Recent campaigns:** open one to see its results.
 
-**Saved setups** (from the page header) keep a campaign's posts, accounts and schedule for reuse,
-and start from the dashboard's quick-start buttons. A setup saved before this layout that wrote
-posts with AI is loaded with its accounts and schedule, and a note explains that posts are now
-created in Create Post.
+**Removed:** saved setups, end dates and durations, posting days and hours, intervals and limits,
+approval mode, recurring schedules, the scheduled-posts overview and the posting-queue table.
+
+- **Recurring schedules** made with an earlier version are kept in the database but no longer start
+  runs.
+- **Saved setups:** a dashboard quick-start link still opens Campaign Automation with that setup's
+  profiles and run time.
 
 ## How it works underneath (unchanged)
 
 **Publishing:**
 
-- Campaigns run on the existing automation runs, and single posts on the publishing queue.
+- Campaigns run on the existing automation runs and publishing queue (one post at a time per profile; spacing from Settings → Automation).
 - IX Browser opens a profile only when its post is due, and closes it afterwards. The engine checks
   the signed-in account, posts, and confirms the post link.
 - If X shows no confirmation, the engine looks for the post on the profile before asking you; it

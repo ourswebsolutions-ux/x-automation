@@ -13,10 +13,12 @@ interface Props {
   publishing: boolean
   /** Offer "save as drafts only" (not meaningful for a campaign that publishes). */
   allowDraftsOnly?: boolean
+  /** Only All / Select profiles — no distribution or identity options (the account check stays on). */
+  simple?: boolean
 }
 
 /** All Profiles (default) or a selection, plus how posts are spread over them. */
-export function ProfileTargets({ value, onChange, publishing, allowDraftsOnly = true }: Props) {
+export function ProfileTargets({ value, onChange, publishing, allowDraftsOnly = true, simple = false }: Props) {
   const toast = useToast()
   const profiles = useBrowserProfiles()
   const accounts = useAccounts()
@@ -51,7 +53,7 @@ export function ProfileTargets({ value, onChange, publishing, allowDraftsOnly = 
           onChange={(scope) => set({ scope })}
           options={[
             { value: 'all', label: 'All profiles' },
-            { value: 'selected', label: 'Selected profiles' }
+            { value: 'selected', label: simple ? 'Select profiles' : 'Selected profiles' }
           ]}
         />
         <span className="text-xs text-fg-subtle" aria-live="polite">
@@ -93,47 +95,51 @@ export function ProfileTargets({ value, onChange, publishing, allowDraftsOnly = 
         </div>
       )}
 
-      <Field label="Posts and profiles" htmlFor="distribution">
-        <SegmentedControl<TargetSettings['distribution']>
-          value={value.distribution}
-          onChange={(distribution) => set({ distribution })}
-          options={[
-            { value: 'unique', label: 'Different posts per profile' },
-            { value: 'same', label: 'Same posts on every profile' },
-            ...(allowDraftsOnly ? [{ value: 'drafts' as const, label: 'Save as drafts only' }] : [])
-          ]}
-        />
-      </Field>
-      {value.distribution === 'same' && (
-        <label className="flex items-center justify-between gap-3 text-sm">
-          <span className="flex flex-col">
-            <span className="text-fg">Allow repeated content</span>
-            <span className="text-xs text-fg-subtle">The same text on several accounts can be limited by X.</span>
-          </span>
-          <Switch checked={value.allowDuplicates} onChange={(allowDuplicates) => set({ allowDuplicates })} aria-label="Allow repeated content" />
-        </label>
-      )}
-      {publishing && (
-        <label className="flex items-center justify-between gap-3 text-sm">
-          <span className="flex flex-col">
-            <span className="text-fg">Check the signed-in account before posting</span>
-            <span className="text-xs text-fg-subtle">Only accounts with a confirmed X username are used. Turn off to also use the others (posting without that check).</span>
-          </span>
-          <Switch
-            checked={value.requireConfirmedIdentity}
-            onChange={(requireConfirmedIdentity) => set({ requireConfirmedIdentity, createMissingAccounts: requireConfirmedIdentity ? false : value.createMissingAccounts })}
-            aria-label="Check the signed-in account before posting"
-          />
-        </label>
-      )}
-      {publishing && !value.requireConfirmedIdentity && (
-        <label className="flex items-center justify-between gap-3 text-sm">
-          <span className="flex flex-col">
-            <span className="text-fg">Include profiles without an account record</span>
-            <span className="text-xs text-fg-subtle">A local account record (username unknown) is created for each.</span>
-          </span>
-          <Switch checked={value.createMissingAccounts} onChange={(createMissingAccounts) => set({ createMissingAccounts })} aria-label="Include profiles without an account record" />
-        </label>
+      {!simple && (
+        <>
+          <Field label="Posts and profiles" htmlFor="distribution">
+            <SegmentedControl<TargetSettings['distribution']>
+              value={value.distribution}
+              onChange={(distribution) => set({ distribution })}
+              options={[
+                { value: 'unique', label: 'Different posts per profile' },
+                { value: 'same', label: 'Same posts on every profile' },
+                ...(allowDraftsOnly ? [{ value: 'drafts' as const, label: 'Save as drafts only' }] : [])
+              ]}
+            />
+          </Field>
+          {value.distribution === 'same' && (
+            <label className="flex items-center justify-between gap-3 text-sm">
+              <span className="flex flex-col">
+                <span className="text-fg">Allow repeated content</span>
+                <span className="text-xs text-fg-subtle">The same text on several accounts can be limited by X.</span>
+              </span>
+              <Switch checked={value.allowDuplicates} onChange={(allowDuplicates) => set({ allowDuplicates })} aria-label="Allow repeated content" />
+            </label>
+          )}
+          {publishing && (
+            <label className="flex items-center justify-between gap-3 text-sm">
+              <span className="flex flex-col">
+                <span className="text-fg">Check the signed-in account before posting</span>
+                <span className="text-xs text-fg-subtle">Only accounts with a confirmed X username are used. Turn off to also use the others (posting without that check).</span>
+              </span>
+              <Switch
+                checked={value.requireConfirmedIdentity}
+                onChange={(requireConfirmedIdentity) => set({ requireConfirmedIdentity, createMissingAccounts: requireConfirmedIdentity ? false : value.createMissingAccounts })}
+                aria-label="Check the signed-in account before posting"
+              />
+            </label>
+          )}
+          {publishing && !value.requireConfirmedIdentity && (
+            <label className="flex items-center justify-between gap-3 text-sm">
+              <span className="flex flex-col">
+                <span className="text-fg">Include profiles without an account record</span>
+                <span className="text-xs text-fg-subtle">A local account record (username unknown) is created for each.</span>
+              </span>
+              <Switch checked={value.createMissingAccounts} onChange={(createMissingAccounts) => set({ createMissingAccounts })} aria-label="Include profiles without an account record" />
+            </label>
+          )}
+        </>
       )}
     </div>
   )

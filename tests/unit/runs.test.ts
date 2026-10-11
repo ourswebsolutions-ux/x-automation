@@ -308,6 +308,29 @@ check('… published on both', await waitFor(() => runs.details(rs.id).run.statu
 const rsItems = itemsOf(rs.id)
 check('… first profile posts the draft, the other an independent copy with the same text', rsItems[0]!.draftId === shared.id && rsItems[1]!.draftId !== shared.id && rsItems[1]!.text === shared.body && rsItems.every((i) => i.scheduleStatus === 'completed'))
 
+// Repost campaign (the simplified campaign form): no posts needed, one repost task per post link,
+// one of your accounts each; the run time becomes the task's due time.
+{
+  db.run("UPDATE automation_runs SET status = 'stopped' WHERE status IN ('generating', 'awaiting-approval', 'paused', 'publishing')")
+  const runAt = new Date(Date.now() + 2 * 3_600_000).toISOString()
+  const repostCfg: AutomationConfig = {
+    ...base(),
+    name: 'Repost campaign',
+    content: { ...base().content, source: 'drafts', draftIds: [], generateText: false, generateImages: false },
+    actions: { ...base().actions, publish: false, saveDrafts: false, repost: true, engagementLinks: ['https://x.com/someone_else/status/1888000000000000001'] },
+    schedule: { ...base().schedule, when: 'schedule', startAt: runAt }
+  }
+  const rp = runs.plan(repostCfg)
+  check('repost campaign: valid without selecting posts; one repost task planned', rp.ok && rp.posts === 0 && rp.engagementTasks === 1, JSON.stringify(rp.problems))
+  const pubBefore = published.length
+  const rr = await runs.start(repostCfg)
+  const ritems = itemsOf(rr.id)
+  const task = db.get<{ kind: string; due_at: string | null; status: string }>('SELECT kind, due_at, status FROM engagement_tasks WHERE id = (SELECT engagement_task_id FROM run_items WHERE run_id = :id)', { id: rr.id })
+  check('… a repost task for one account, due at the campaign run time, nothing published', ritems.length === 1 && ritems[0]!.kind === 'engagement' && task?.kind === 'repost' && task.due_at === runAt && task.status === 'open' && published.length === pubBefore, JSON.stringify(task))
+  check('… the campaign completes (the repost itself is done by you)', await waitFor(() => runs.details(rr.id).run.status === 'completed', 4000), runs.details(rr.id).run.status)
+  check('post campaign still needs posts', runs.plan({ ...repostCfg, actions: { ...repostCfg.actions, publish: true, repost: false, engagementLinks: [] } }).problems.some((p) => p.blocking && p.message.includes('Choose the drafts')))
+}
+
 // "same" with no interval: each slot still gets its own text (grouped by slot, not by time)
 const slotCfg: AutomationConfig = { ...base(), mode: 'manual-approval', content: { ...base().content, generateImages: false }, targets: { ...base().targets, distribution: 'same', allowDuplicates: true }, schedule: { ...base().schedule, postsPerProfile: 2, intervalMinutes: 0 } }
 const rslot = await runs.start(slotCfg)

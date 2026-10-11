@@ -7,10 +7,10 @@ Built with Electron, React, TypeScript, Vite (electron-vite) and Tailwind CSS.
 - **Create Post:** write a post yourself or with AI (AI Post / Manual Post), add images, preview and
   edit it, then **Publish now** to all or selected accounts (with live progress), or **Use in a
   campaign**.
-- **Campaign Automation:** choose saved posts and accounts, set the schedule (start, end or
-  duration, posting days and hours, interval, limits), review, and **Start campaign**. Then pause,
-  resume or stop it and follow its status, next posting times, published posts and errors. The
-  posting queue (needs-review, retries, hold) and earlier recurring campaigns are on the same page.
+- **Campaign Automation:** choose **Post** or **Repost**, **All** or **selected** profiles, the
+  posts, and a run time (now or later), then **Start campaign**. It shows Running, Completed or
+  Failed, with a result for each profile. Reposts are tasks you complete yourself, one account per
+  post.
 
 Dashboard, Accounts & Profiles, Post Links and Settings are unchanged.
 See [docs/automation.md](docs/automation.md).

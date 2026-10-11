@@ -1,26 +1,28 @@
-import { CheckCheck, ExternalLink, ListTodo, Pause, PencilLine, Play, RotateCw, Square, Trash2 } from 'lucide-react'
+import { CheckCheck, ExternalLink, ListTodo, PencilLine, Play, RotateCw, Square, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import type { AutomationMode, RunItem, RunStatus } from '@shared/types/automation'
-import { Button, ConfirmDialog, IconButton, SegmentedControl, Skeleton, StatusBadge, useToast, type Tone } from '@/components/ui'
+import type { RunItem, RunStatus } from '@shared/types/automation'
+import { Button, ConfirmDialog, IconButton, Skeleton, StatusBadge, useToast, type Tone } from '@/components/ui'
 import { AssetThumb } from '@/components/feature/AssetThumb'
 import { useRunDetails } from '@/data/automation'
 import { errorMessage, relay } from '@/lib/bridge'
 import { formatDateTime, pluralize } from '@/lib/format'
 
-const RUN_STATUS: Record<RunStatus, { label: string; tone: Tone; pulse?: boolean }> = {
-  generating: { label: 'Preparing posts', tone: 'info', pulse: true },
+/** Campaign status in plain words: Running, Completed, Failed (Stopped / Paused for older or stopped runs). */
+export const RUN_LABEL: Record<RunStatus, { label: string; tone: Tone; pulse?: boolean }> = {
+  generating: { label: 'Running', tone: 'info', pulse: true },
   'awaiting-approval': { label: 'Waiting for approval', tone: 'warning' },
-  publishing: { label: 'Publishing', tone: 'info', pulse: true },
+  publishing: { label: 'Running', tone: 'info', pulse: true },
   paused: { label: 'Paused', tone: 'warning' },
-  completed: { label: 'Finished', tone: 'success' },
+  completed: { label: 'Completed', tone: 'success' },
   stopped: { label: 'Stopped', tone: 'neutral' },
   failed: { label: 'Failed', tone: 'danger' }
 }
+const RUN_STATUS = RUN_LABEL
 
 /** What an item looks like to the user (its publishing state comes from the queue). */
 function itemState(i: RunItem): { label: string; tone: Tone } {
-  if (i.kind === 'engagement') return { label: 'Task for you', tone: 'neutral' }
+  if (i.kind === 'engagement') return { label: i.text?.startsWith('Repost') ? 'Repost task for you' : 'Task for you', tone: 'neutral' }
   switch (i.status) {
     case 'pending':
       return { label: 'Waiting', tone: 'neutral' }
@@ -75,7 +77,7 @@ export function RunPanel({ runId }: { runId: string }) {
   }
 
   return (
-    <section aria-label="Automation run" className="flex flex-col gap-4 rounded-lg border border-line bg-surface-2 px-5 py-4">
+    <section aria-label="Campaign status" className="flex flex-col gap-4 rounded-lg border border-line bg-surface-2 px-5 py-4">
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <span className="flex items-center gap-2">
           <h2 className="text-sm font-medium text-fg">{run.name}</h2>
@@ -86,22 +88,9 @@ export function RunPanel({ runId }: { runId: string }) {
         <span className="text-xs text-fg-subtle">Started {formatDateTime(run.createdAt)}</span>
         {live && (
           <span className="ml-auto flex items-center gap-2">
-            <SegmentedControl<AutomationMode>
-              size="sm"
-              value={run.mode}
-              onChange={(mode) => act('mode', () => relay.runs.setMode(run.id, mode), mode === 'full-auto' ? 'Switched to Full Auto' : 'Switched to Manual Approval')}
-              options={[
-                { value: 'full-auto', label: 'Full Auto' },
-                { value: 'manual-approval', label: 'Manual Approval' }
-              ]}
-            />
-            {run.status === 'paused' ? (
+            {run.status === 'paused' && (
               <Button size="sm" variant="primary" icon={Play} loading={busy === 'resume'} onClick={() => act('resume', () => relay.runs.resume(run.id))}>
                 Resume
-              </Button>
-            ) : (
-              <Button size="sm" icon={Pause} loading={busy === 'pause'} onClick={() => act('pause', () => relay.runs.pause(run.id))}>
-                Pause
               </Button>
             )}
             <Button size="sm" variant="ghost" icon={Square} onClick={() => setConfirmStop(true)}>
@@ -138,7 +127,7 @@ export function RunPanel({ runId }: { runId: string }) {
         </Button>
       )}
 
-      <ul className="flex flex-col divide-y divide-line rounded-md border border-line" aria-label="Posts in this run">
+      <ul className="flex flex-col divide-y divide-line rounded-md border border-line" aria-label="Results per profile">
         {items
           .filter((i) => i.status !== 'removed')
           .map((i) => {

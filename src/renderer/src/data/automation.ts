@@ -31,7 +31,3 @@ export function useRuns() {
 export function usePresets() {
   return useRunsResource(() => relay.presets.list(), [])
 }
-
-export function useAutomationSchedules() {
-  return useRunsResource(() => relay.automationSchedules.list(), [], 30_000)
-}

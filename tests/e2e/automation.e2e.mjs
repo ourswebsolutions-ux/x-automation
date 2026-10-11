@@ -95,8 +95,8 @@ const go = async (hash) => { await page.evaluate((h) => (window.location.hash = 
 const toastShown = (text, ms = 30000) => waitFor(async () => (await page.locator('[role="status"]', { hasText: text }).count()) > 0, ms)
 const details = (id) => page.evaluate((i) => window.relay.runs.details(i), id)
 const runSettled = (id, ms = 120000) => waitFor(async () => ['completed', 'stopped', 'failed'].includes((await details(id)).run.status), ms)
-const summary = page_ => page_.locator('aside[aria-label="Summary"]')
-const runPanel = () => page.locator('section[aria-label="Automation run"]')
+const summary = page_ => page_.locator('aside[aria-label="Start"]')
+const runPanel = () => page.locator('section[aria-label="Campaign status"]')
 
 const baseConfig = (patch = {}) => {
   const c = {
@@ -181,27 +181,19 @@ await page.waitForSelector('#camp-name')
 check('“Use in a campaign” opens Campaign Automation with the post selected', (await page.locator(`[aria-label="Use draft: ${manualText.slice(0, 100)}"]`).getAttribute('aria-checked')) === 'true' || (await page.locator(`[aria-label="Use draft: ${manualText.slice(0, 100)}"]`).isChecked()))
 await page.locator(`[aria-label="Use draft: ${aiText.slice(0, 100)}"]`).click()
 await page.locator('#camp-name').fill('Keyboard tips')
+check('campaign form: Action, Profiles, Posts, Run time only', (await page.locator('main section[aria-label]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).filter((l) => ['Action', 'Profiles', 'Posts', 'Run time'].includes(l)).length === 4 && (await page.locator('#camp-interval, #camp-per-profile, [aria-label="Posting days"]').count()) === 0)
+check('action type: Post selected, Repost available', (await page.locator('[role="radio"][aria-checked="true"]:has-text("Post")').count()) === 1 && (await page.locator('[role="radio"]:has-text("Repost")').count()) === 1)
 check('campaign: All profiles by default, with counts', (await page.locator('[role="radio"][aria-checked="true"]:has-text("All profiles")').count()) === 1 && (await page.getByText('5 selected · 4 available · 1 unavailable').isVisible()))
-check('plan: 3 of 5 profiles eligible, 2 posts from your drafts', await waitFor(async () => (await summary(page).innerText()).includes('3 of 5') && (await summary(page).innerText()).includes('2 from your drafts'), 8000), (await summary(page).innerText().catch(() => '')).replace(/\n/g, ' | '))
-const planText = await summary(page).innerText()
-check('plan: unavailable and unconfirmed profiles left out, with warnings', planText.includes('1 profile is unavailable and will be left out') && planText.includes('1 account has no confirmed X username'), planText.replace(/\n/g, ' | '))
-check('plan: enabled actions summarised', planText.includes('Publish automatically') && planText.includes('Post 2 of your drafts') && !/repost|like/i.test(planText))
+check('start panel: 2 posts on 3 profiles (unavailable/unconfirmed left out)', await waitFor(async () => (await summary(page).innerText()).includes('2 posts on 3 profiles') && (await summary(page).innerText()).includes('can’t be used'), 8000), (await summary(page).innerText().catch(() => '')).replace(/\n/g, ' | '))
 await snap('03-campaign')
-await page.locator('main button:has-text("Save setup")').click()
-await page.locator('#preset-name').fill('Keyboard tips preset')
-await page.locator('[role="dialog"] button:has-text("Save")').last().click()
-check('campaign setup saved', await toastShown('Campaign setup saved', 8000))
+// A saved setup for the dashboard quick start (presets are created by older versions / IPC)
+await page.evaluate((c) => window.relay.presets.save({ name: 'Keyboard tips preset', config: c }), baseConfig({ name: 'Keyboard tips preset' }))
 
 const postsBefore1 = (await fxPosts()).length
-await page.locator('aside[aria-label="Summary"] button:has-text("Start campaign")').click()
-const modal = page.locator('[role="dialog"]').last()
-await modal.waitFor()
-check('one confirmation before the campaign, describing it', (await modal.innerText()).includes('2 posts on 3 profiles') && (await modal.innerText()).includes('without asking again'), (await modal.innerText()).replace(/\n/g, ' | '))
-await modal.locator('button:has-text("Start")').last().click()
-check('“Automation started” notice', await toastShown('Automation started'))
+await page.locator('aside[aria-label="Start"] button:has-text("Start campaign")').click()
+check('one click starts the campaign', await toastShown('Campaign started'))
 let run1 = await page.evaluate(() => window.relay.runs.active())
 check('campaign run created from the two saved posts', run1?.mode === 'full-auto' && run1.counts.total === 2)
-await modal.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
 const published1 = await waitFor(async () => (await fxPosts()).length - postsBefore1 >= 2 && (await details(run1.id)).run.status === 'completed', 180000)
 await snap('04-campaign-finished')
 const posts1 = (await fxPosts()).slice(postsBefore1)
@@ -218,7 +210,7 @@ const ixCalls = (n) => ix.state.log.map((l, i) => ({ i, url: l.url, id: l.params
 check('IX lifecycle: each profile opened only when its post was due and closed after it (open → close, nothing left open)', [1, 2].every((n) => { const c = ixCalls(n); const lastOpen = c.filter((x) => x.url === '/api/v2/profile-open').at(-1)?.i ?? -1; const lastClose = c.filter((x) => x.url === '/api/v2/profile-close').at(-1)?.i ?? -1; return lastOpen >= 0 && lastClose > lastOpen }) && [1, 2].every((n) => !ix.state.openedApi.has(n)), JSON.stringify([...ix.state.openedApi]))
 check('image request went to the image endpoint with the chosen model', ai.state.log.filter((l) => l.path === '/v1/images/generations' && l.body?.model === 'gpt-image-test').length === 1)
 check('“Post published” and “Automation finished” notices', (await toastShown('Post published')) && (await toastShown('Automation finished')))
-check('campaign panel shows Finished and View on X links', (await runPanel().getByText('Finished').isVisible()) && (await runPanel().locator('button[aria-label="View on X"]').count()) === 2)
+check('campaign status: Completed, with a result for each profile (View on X)', (await runPanel().getByText('Completed').isVisible()) && (await runPanel().locator('ul[aria-label="Results per profile"] li').count()) === 2 && (await runPanel().locator('button[aria-label="View on X"]').count()) === 2)
 
 // ── 2. Manual Approval: approve, edit, regenerate, remove (Selected Profiles) ──
 const postsBefore2 = (await fxPosts()).length
@@ -233,7 +225,7 @@ await runPanel().waitFor()
 await snap('04-approval')
 let items2 = (await details(run2.id)).items
 const [iRegen, iRemove, iEdit, iApprove] = items2
-const rows = () => runPanel().locator('ul[aria-label="Posts in this run"] > li')
+const rows = () => runPanel().locator('ul[aria-label="Results per profile"] > li')
 const rowOf = (text) => rows().filter({ hasText: text })
 // regenerate
 await rowOf(iRegen.text).locator('button[aria-label="Regenerate"]').click()
@@ -297,7 +289,7 @@ check('after restart: run and its waiting post are still there', after4.run.stat
 const postsBefore4 = (await fxPosts()).length
 await go(`#/campaigns?run=${run4.id}`)
 await runPanel().waitFor()
-await runPanel().locator('[role="radio"]:has-text("Full Auto")').click()
+await page.evaluate((id) => window.relay.runs.setMode(id, 'full-auto'), run4.id)
 check('switching to Full Auto publishes the waiting post', await waitFor(async () => (await fxPosts()).length - postsBefore4 === 1 && (await details(run4.id)).run.status === 'completed', 90000))
 const d4 = await details(run4.id)
 check('… nothing deleted; mode recorded', d4.run.mode === 'full-auto' && d4.items.length === 1 && (await fxPosts()).at(-1).text === before4.text && (await fxPosts()).at(-1).handle === 'relay_c')
@@ -355,14 +347,14 @@ await page.evaluate(() => localStorage.removeItem('axora.automation.draft'))
 await panel.locator('button:has-text("Keyboard tips preset")').click()
 check('dashboard preset quick start → Campaign Automation with the saved setup', await waitFor(async () => (await page.locator('#camp-name').inputValue()) === 'Keyboard tips preset' && (await page.evaluate(() => location.hash)).startsWith('#/campaigns'), 8000), await page.evaluate(() => location.hash))
 
-// Selected profiles UI
-await page.locator('[role="radio"]:has-text("Selected profiles")').click()
+// Select profiles (multi-select)
+await page.locator('section[aria-label="Profiles"] [role="radio"]:has-text("Select profiles")').click()
 await page.waitForTimeout(300)
-await page.locator('section[aria-label="Accounts"]').getByRole('button', { name: 'Select all', exact: true }).click()
-check('selected profiles: Select all → counts', await page.getByText('5 selected · 4 available · 1 unavailable').isVisible())
-await page.locator('section[aria-label="Accounts"]').getByRole('button', { name: 'Deselect all', exact: true }).click()
+await page.locator('section[aria-label="Profiles"]').getByRole('button', { name: 'Select all', exact: true }).click()
+check('select profiles: Select all → counts', await page.getByText('5 selected · 4 available · 1 unavailable').isVisible())
+await page.locator('section[aria-label="Profiles"]').getByRole('button', { name: 'Deselect all', exact: true }).click()
 await page.locator(`[aria-label="Select ${prof(2).name}"]`).click()
-check('… one picked → plan uses only that profile', await waitFor(async () => (await page.getByText('1 selected · 1 available · 0 unavailable').isVisible()) && (await summary(page).innerText()).includes('1 of 1'), 6000))
+check('… one picked → the campaign uses only that profile', await waitFor(async () => (await page.getByText('1 selected · 1 available · 0 unavailable').isVisible()) && /on 1 profile/.test(await summary(page).innerText()), 6000), (await summary(page).innerText()).replace(/\n/g, ' | '))
 await snap('07-selected')
 
 // ── 9. Create Post → Publish now: All accounts / Select accounts, validation, live progress ──
@@ -392,69 +384,69 @@ check('… published once from each account, text unchanged', (await fxPosts()).
 await snap('10-publish-progress')
 await pd.locator('button:has-text("Close")').last().click()
 
-// ── 10. A scheduled campaign: start date/time, posting days, posting hours, interval; then stop ──
+// ── 10. Post campaign with a run time; then stop ──
 const sched = []
 for (const body of ['Scheduled campaign post one', 'Scheduled campaign post two']) sched.push(await page.evaluate((b) => window.relay.drafts.save({ body: b, accountId: null, status: 'draft' }), body))
-await page.evaluate(() => localStorage.removeItem('axora.automation.draft'))
+await page.evaluate(() => localStorage.removeItem('axora.campaign.choices'))
 await go('#/dashboard')
 await go('#/campaigns')
 await page.waitForSelector('#camp-name')
 await page.locator('#camp-name').fill('Tomorrow morning')
 for (const d of sched) await page.locator(`[aria-label="Use draft: ${d.body.slice(0, 100)}"]`).click()
-await page.locator('[role="radio"]:has-text("Selected profiles")').click()
+await page.locator('section[aria-label="Profiles"] [role="radio"]:has-text("Select profiles")').click()
 await page.locator(`[aria-label="Select ${prof(3).name}"]`).click()
-await page.locator('[role="radio"]:has-text("At a date and time")').click()
+await page.locator('section[aria-label="Run time"] [role="radio"]:has-text("At a date and time")').click()
 const tomorrow = new Date(Date.now() + 86_400_000)
 const p2 = (n) => String(n).padStart(2, '0')
-await page.locator('#camp-start').fill(`${tomorrow.getFullYear()}-${p2(tomorrow.getMonth() + 1)}-${p2(tomorrow.getDate())}T08:00`)
-const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-for (const d of [0, 1, 2, 3, 4, 5, 6]) {
-  const btn = page.locator(`[role="group"][aria-label="Posting days"] button:has-text("${dayNames[d]}")`)
-  const want = d === tomorrow.getDay()
-  if (((await btn.getAttribute('aria-pressed')) === 'true') !== want) await btn.click()
-}
-await page.locator('[role="switch"][aria-label="Only post between set times"]').click()
-await page.locator('[aria-label="Posting from"]').fill('10:00')
-await page.locator('[aria-label="Posting until"]').fill('12:00')
-await page.locator('#camp-interval').fill('30')
-await page.locator('#camp-per-profile').fill('2')
-check('scheduled campaign: plan shows 2 posts starting tomorrow 10:00', await waitFor(async () => /posts\s*2/i.test((await summary(page).innerText()).replace(/\n/g, ' ')) && (await summary(page).innerText()).includes('10:00'), 8000), (await summary(page).innerText()).replace(/\n/g, ' | '))
+await page.locator('#camp-start').fill(`${tomorrow.getFullYear()}-${p2(tomorrow.getMonth() + 1)}-${p2(tomorrow.getDate())}T10:00`)
+check('run time: start panel shows 2 posts on 1 profile from tomorrow 10:00', await waitFor(async () => (await summary(page).innerText()).includes('2 posts on 1 profile') && (await summary(page).innerText()).includes('10:00'), 8000), (await summary(page).innerText()).replace(/\n/g, ' | '))
 await snap('11-scheduled-campaign')
-await page.locator('aside[aria-label="Summary"] button:has-text("Start campaign")').click()
-await page.locator('[role="dialog"]').last().locator('button:has-text("Start")').last().click()
+await page.locator('aside[aria-label="Start"] button:has-text("Start campaign")').click()
 const run10 = await waitFor(async () => (await page.evaluate(() => window.relay.runs.list()))[0]?.name === 'Tomorrow morning', 10000) ? (await page.evaluate(() => window.relay.runs.list()))[0] : null
-check('… posts scheduled on the chosen day inside the posting hours, 30 min apart', run10 !== null && (await waitFor(async () => (await details(run10.id)).items.every((i) => i.scheduleStatus === 'pending'), 20000)) && (() => true)(), run10 && JSON.stringify((await details(run10.id)).items.map((i) => i.runAt)))
+check('… both posts wait for the run time (nothing published yet)', run10 !== null && (await waitFor(async () => (await details(run10.id)).items.length === 2 && (await details(run10.id)).items.every((i) => i.scheduleStatus === 'pending'), 20000)), run10 && JSON.stringify((await details(run10.id)).items.map((i) => [i.scheduleStatus, i.runAt])))
 if (run10) {
-  const times = (await details(run10.id)).items.map((i) => new Date(i.runAt)).sort((a, b) => a - b)
-  check('… first at 10:00 tomorrow, second at 10:30', times.length === 2 && times[0].getDay() === tomorrow.getDay() && times[0].getHours() === 10 && times[0].getMinutes() === 0 && times[1] - times[0] === 30 * 60_000, times.map((t) => t.toString()).join(' | '))
-  check('… campaign shows next posting times', await runPanel().getByText(/10:00|10:30/).first().isVisible())
-  await runPanel().locator('button:has-text("Pause")').click()
-  check('pause campaign', await waitFor(async () => (await details(run10.id)).run.status === 'paused', 8000))
-  await runPanel().locator('button:has-text("Resume")').click()
-  check('resume campaign', await waitFor(async () => (await details(run10.id)).run.status !== 'paused', 8000))
+  const times = (await details(run10.id)).items.map((i) => new Date(i.runAt))
+  check('… at tomorrow 10:00 on the selected profile', times.every((t) => t.getDate() === tomorrow.getDate() && t.getHours() === 10 && t.getMinutes() === 0) && (await details(run10.id)).items.every((i) => i.profileId === prof(3).id))
+  check('… status shows Running with the profile results', (await runPanel().getByText('Running').first().isVisible()) && (await runPanel().locator('ul[aria-label="Results per profile"] li').count()) === 2)
   await runPanel().locator('button:has-text("Stop")').click()
   await page.locator('[role="dialog"] button:has-text("Stop")').last().click()
-  check('stop campaign: waiting posts cancelled and back in your posts', await waitFor(async () => (await details(run10.id)).run.status === 'stopped', 10000) && (await page.evaluate(() => window.relay.drafts.list())).filter((d) => sched.some((x) => x.id === d.id) && (d.status === 'ready' || d.status === 'draft')).length === 2)
+  check('stop: campaign stopped, posts back in your library', await waitFor(async () => (await details(run10.id)).run.status === 'stopped', 10000) && (await page.evaluate(() => window.relay.drafts.list())).filter((d) => sched.some((x) => x.id === d.id) && (d.status === 'ready' || d.status === 'draft')).length === 2)
 }
 
-// ── 11. Recurring campaigns made earlier keep working and stay manageable; old addresses redirect ──
-const tomorrowStr = `${tomorrow.getFullYear()}-${p2(tomorrow.getMonth() + 1)}-${p2(tomorrow.getDate())}`
-await page.evaluate(([c, d]) => window.relay.automationSchedules.save({ name: 'Daily tips', config: c, presetId: null, startDate: d, endDate: null, days: [0, 1, 2, 3, 4, 5, 6], windowStart: '09:00', windowEnd: '17:00' }), [baseConfig({ name: 'Daily tips' }), tomorrowStr])
+// ── 11. Repost campaign: action Repost → profiles → post link → Start (tasks for the user, never automatic) ──
+await page.evaluate(() => window.relay.links.add({ text: 'https://x.com/someone_else/status/1999000000000000001', accountId: null, tags: [], notes: '' })).catch(() => null)
+const engBefore11 = await page.evaluate(() => window.relay.engagement.list({ status: 'all' }))
+const postsBefore11 = (await fxPosts()).length
+const opensBefore11 = ix.state.log.filter((l) => l.url === '/api/v2/profile-open').length
 await go('#/dashboard')
 await go('#/campaigns')
-const rec = page.locator('section[aria-label="Recurring campaigns"] li', { hasText: 'Daily tips' })
-check('recurring campaign listed with its next day', await waitFor(async () => (await rec.count()) === 1 && (await rec.innerText()).includes('next'), 8000))
-await rec.locator('button:has-text("Pause")').click()
-check('recurring campaign: pause', await toastShown('Recurring campaign paused'))
-await rec.locator('button:has-text("Resume")').click()
-check('recurring campaign: resume', await toastShown('Recurring campaign resumed'))
-await snap('12-campaign-lists')
+await page.waitForSelector('#camp-name')
+await page.locator('#camp-name').fill('Repost campaign')
+await page.locator('section[aria-label="Action"] [role="radio"]:has-text("Repost")').click()
+await page.locator('section[aria-label="Profiles"] [role="radio"]:has-text("All profiles")').click()
+await page.locator('section[aria-label="Run time"] [role="radio"]:has-text("Now")').click()
+check('repost: the post-link library is offered instead of saved posts', await waitFor(async () => (await page.locator('ul[aria-label="Post links"]').count()) === 1, 5000) && (await page.locator('ul[aria-label="Your drafts"]').count()) === 0)
+await page.locator('[aria-label="Repost https://x.com/someone_else/status/1999000000000000001"]').click()
+check('repost: start panel shows 1 repost task', await waitFor(async () => (await summary(page).innerText()).includes('1 repost task'), 8000), (await summary(page).innerText()).replace(/\n/g, ' | '))
+await snap('12-repost-campaign')
+await page.locator('aside[aria-label="Start"] button:has-text("Start campaign")').click()
+check('repost: campaign started', await toastShown('Campaign started'))
+const run11 = await waitFor(async () => (await page.evaluate(() => window.relay.runs.list()))[0]?.name === 'Repost campaign', 10000) ? (await page.evaluate(() => window.relay.runs.list()))[0] : null
+check('repost: campaign Completed with a repost task for one profile', run11 !== null && (await waitFor(async () => (await details(run11.id)).run.status === 'completed', 15000)) && (await runPanel().getByText('Repost task for you').isVisible()), run11 && (await details(run11.id)).run.status)
+const newEng11 = (await page.evaluate(() => window.relay.engagement.list({ status: 'all' }))).filter((e) => !engBefore11.some((b) => b.id === e.id))
+check('repost: one open repost task (one of your accounts per post), nothing posted, no profile opened by the app', newEng11.length === 1 && newEng11[0].kind === 'repost' && newEng11[0].status === 'open' && (await fxPosts()).length === postsBefore11 && ix.state.log.filter((l) => l.url === '/api/v2/profile-open').length === opensBefore11, JSON.stringify(newEng11.map((e) => [e.kind, e.status])))
+
+// ── 12. Publishing safety on the campaign page; old addresses redirect ──
+check('needs-review posts are listed with Review (publishing safety kept)', (await page.locator('section[aria-label="Needs your attention"] li', { hasText: 'Check whether it was posted' }).count()) >= 1)
+await page.locator('section[aria-label="Needs your attention"] li', { hasText: 'Check whether it was posted' }).first().getByRole('button', { name: 'Review' }).click()
+check('… Review opens the check-and-confirm dialog', await waitFor(async () => (await page.locator('[role="dialog"]').count()) >= 1, 5000))
+await page.keyboard.press('Escape')
+check('no recurring schedules, scheduling dashboard or posting-queue table on the page', (await page.locator('section[aria-label="Recurring campaigns"], section[aria-label="Scheduled posts"], section[aria-label="Posting queue"]').count()) === 0)
 const hashAfter = async (h) => { await go(h); await page.waitForTimeout(300); return page.evaluate(() => location.hash) }
 check('old address /posts?draft= → Create Post with that post', (await hashAfter(`#/posts?draft=${manual.id}`)) === `#/create?draft=${manual.id}`)
 check('old address /generator → Create Post (AI)', (await hashAfter('#/generator')) === '#/create?mode=ai')
 check('old address /automation?run= → Campaign Automation with that campaign', (await hashAfter(`#/automation?run=${run1.id}`)) === `#/campaigns?run=${run1.id}`)
-check('old addresses /queue, /scheduler, /automation-schedule → Campaign Automation', (await hashAfter('#/queue?view=attention')).startsWith('#/campaigns?') && (await hashAfter('#/scheduler')) === '#/campaigns?view=scheduled' && (await hashAfter('#/automation-schedule')) === '#/campaigns')
-check('posting queue is part of Campaign Automation', (await page.locator('section[aria-label="Posting queue"]').count()) === 1)
+check('old addresses /queue, /scheduler, /automation-schedule → Campaign Automation', (await hashAfter('#/queue?view=attention')).startsWith('#/campaigns?') && (await hashAfter('#/scheduler')).startsWith('#/campaigns') && (await hashAfter('#/automation-schedule')) === '#/campaigns')
 
 // Notifications contain no codes or technical details
 await page.locator('button[aria-label^="Notifications"]').click()

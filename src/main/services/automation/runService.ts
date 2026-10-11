@@ -192,7 +192,8 @@ export class RunService {
     const publishing = actions.publish && targets.distribution !== 'drafts'
 
     // Your own drafts (source drafts / mixed): only unscheduled, unpublished ones can be used.
-    const useDrafts = content.source !== 'generate'
+    // Posts are only needed when the campaign posts (a Repost-only campaign has none).
+    const useDrafts = content.source !== 'generate' && (actions.publish || actions.saveDrafts)
     const usableDrafts = useDrafts ? this.usableDrafts(content.draftIds) : []
     if (useDrafts) {
       if (content.draftIds.length === 0) block('Choose the drafts to post.')
@@ -922,7 +923,9 @@ export class RunService {
         // One account per post and kind — several of your accounts on one post is coordinated engagement.
         for (let i = 0; i < accounts.length; i++) {
           const accountId = accounts[(turn + i) % accounts.length]!
-          const result = this.deps.engagement.create({ linkIds: [linkId], accountId, kind, dueAt: null, note: `From automation “${config.name}”`, replyText: kind === 'reply' ? config.actions.commentText : '' })
+          // A campaign's run time becomes the task's due time (now = no due time).
+          const dueAt = config.schedule.when === 'schedule' ? config.schedule.startAt : null
+          const result = this.deps.engagement.create({ linkIds: [linkId], accountId, kind, dueAt, note: `From campaign “${config.name}”`, replyText: kind === 'reply' ? config.actions.commentText : '' })
           if (result.created.length) {
             const task = result.created[0]!
             this.deps.db.run(
