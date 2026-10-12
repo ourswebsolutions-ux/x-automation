@@ -52,7 +52,7 @@ export function draftsRepository(db: SqliteDatabase, assetExists: (relativePath:
   return new DraftRepository(
     db,
     'drafts',
-    ['id', 'body', 'hashtags', 'account_id', 'status', 'origin', 'source_generation_id', 'created_at', 'updated_at'],
+    ['id', 'body', 'hashtags', 'account_id', 'status', 'origin', 'source_generation_id', 'comment_text', 'comment_enabled', 'created_at', 'updated_at'],
     {
       toRow: (d) => ({
         id: d.id,
@@ -62,6 +62,9 @@ export function draftsRepository(db: SqliteDatabase, assetExists: (relativePath:
         account_id: d.accountId,
         status: d.status,
         origin: d.origin,
+        // Drafts written before comments existed have none.
+        comment_text: d.comment?.text ?? '',
+        comment_enabled: d.comment?.enabled ? 1 : 0,
         created_at: d.createdAt,
         updated_at: d.updatedAt
       }),
@@ -74,6 +77,7 @@ export function draftsRepository(db: SqliteDatabase, assetExists: (relativePath:
         status: r.status as Draft['status'],
         origin: r.origin as Draft['origin'],
         media: [],
+        comment: { enabled: Number(r.comment_enabled ?? 0) === 1, text: str(r.comment_text ?? '') },
         createdAt: str(r.created_at),
         updatedAt: str(r.updated_at)
       })

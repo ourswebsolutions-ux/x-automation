@@ -122,6 +122,8 @@ export interface RunPlan {
   /** Posts that come from your own drafts. */
   fromDrafts: number
   images: number
+  /** Posts (from your saved posts) that carry a comment, posted as a reply after each post. */
+  comments: number
   engagementTasks: number
   firstRunAt: Timestamp | null
   lastRunAt: Timestamp | null
@@ -155,6 +157,8 @@ export interface RunItem {
   scheduleStatus: ScheduleStatus | null
   taskStatus: TaskStatus | null
   postUrl: string | null
+  /** The comment saved with the post (null = none): posted by the same account as a reply once the post is confirmed. */
+  comment: { text: string; status: TaskStatus | null; url: string | null; error: string | null } | null
   runAt: Timestamp | null
   error: string | null
 }
@@ -169,6 +173,8 @@ export interface RunCounts {
   needsReview: number
   skipped: number
   saved: number
+  /** Comments (replies to the run's own posts): posted, failed or needing review, still to go. */
+  comments: { total: number; posted: number; failed: number; pending: number }
 }
 
 export interface AutomationRun {

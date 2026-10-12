@@ -8,11 +8,11 @@ import type {
   BulkResult,
   CreateFromProfilesResult
 } from '@shared/types/accounts'
-import type { ProfileOperationResult } from '@shared/types/ixbrowser'
+import type { BrowserProfile, ProfileOperationResult } from '@shared/types/ixbrowser'
 import type { AccountRecord, AccountRepository } from '../database/sqlite/accountRepository'
 import type { ProfileRepository } from '../database/sqlite/profileRepository'
 import { ConflictError, NotFoundError, ValidationError } from '../errors'
-import type { IxBrowserService, ProfileEvent } from '../integrations/ixbrowser/ixBrowserService'
+import type { IxBrowserService, LinkOutcome, ProfileEvent } from '../integrations/ixbrowser/ixBrowserService'
 import type { ScopedLogger } from '../logging/logger'
 
 interface Deps {
@@ -46,6 +46,7 @@ const short = (id: string) => id.slice(0, 8)
 export class AccountService {
   constructor(private readonly deps: Deps) {
     deps.ixBrowser.onProfileEvents((events) => this.recordProfileEvents(events))
+    deps.ixBrowser.setLinker(() => this.linkSyncedProfiles())
   }
 
   list(): Account[] {
@@ -124,6 +125,8 @@ export class AccountService {
       const profile = this.deps.profiles.get(record.profileId)
       if (profile && this.deps.ixBrowser.isPending(profile.externalId)) return 'An open or close request is in progress'
       this.deps.accounts.update({ ...record, profileId: null, linkedAt: null, updatedAt: now })
+      // Disconnected on purpose: syncs leave this profile alone until it is connected again.
+      if (profile) this.deps.profiles.setLinkExcluded(profile.id, now, record.id)
       this.event(
         record.id,
         'unlinked',
@@ -160,6 +163,8 @@ export class AccountService {
       if (refs.scheduled || refs.postLinks) {
         return `Has ${refs.scheduled} scheduled post(s) and ${refs.postLinks} post link(s) — disable it instead`
       }
+      // A removed account's profile is not linked again by the next sync (connect it again to use it).
+      if (record.profileId) this.deps.profiles.setLinkExcluded(record.profileId, new Date().toISOString())
       this.deps.accounts.remove(record.id)
       return null
     })
@@ -170,6 +175,7 @@ export class AccountService {
   /**
    * Creates one record per selected profile, labelled with the profile name.
    * The username stays unknown: a profile name is not an X identity.
+   * Also used to connect a profile again after it was disconnected.
    */
   createFromProfiles(profileIds: string[]): CreateFromProfilesResult {
     const now = new Date().toISOString()
@@ -181,25 +187,7 @@ export class AccountService {
         if (!profile) skipped.push({ id: profileId, reason: 'Profile not found — sync profiles again' })
         else if (profile.availability !== 'available') skipped.push({ id: profileId, reason: 'No longer reported by IX Browser' })
         else if (this.deps.accounts.byProfile(profileId)) skipped.push({ id: profileId, reason: 'Already linked to an account' })
-        else {
-          const id = randomUUID()
-          this.deps.accounts.insert({
-            id,
-            label: profile.name.trim().slice(0, 80) || `Profile #${profile.externalId}`,
-            handle: null,
-            identity: 'unknown',
-            identityConfirmedAt: null,
-            profileId: null,
-            linkedAt: null,
-            enabled: true,
-            notes: '',
-            createdAt: now,
-            updatedAt: now
-          })
-          this.event(id, 'created', 'Account record created from a browser profile', now)
-          this.linkInTransaction(id, profileId, now)
-          created.push(id)
-        }
+        else created.push(this.insertFromProfile(profile, now, 'Account record created from a browser profile'))
       }
     })
     if (created.length) {
@@ -207,6 +195,64 @@ export class AccountService {
       this.deps.onChange()
     }
     return { changed: created.length, skipped, accounts: created.map((id) => this.require(id)) }
+  }
+
+  /**
+   * Connects a profile again after it was disconnected: the account that was linked before is
+   * linked again (its username, settings and history are kept); without one, a new record is made.
+   */
+  connectProfile(profileId: string): Account {
+    const now = new Date().toISOString()
+    let id: string | null = null
+    this.deps.accounts.transaction(() => {
+      const profile = this.deps.profiles.get(profileId)
+      if (!profile) throw new NotFoundError('That browser profile is not in the local list. Sync profiles and try again.')
+      const owner = this.deps.accounts.byProfile(profileId)
+      if (owner) {
+        id = owner.id
+        return
+      }
+      const previous = this.deps.profiles.disconnectedAccount(profileId)
+      const record = previous ? this.deps.accounts.record(previous) : null
+      if (record && !record.profileId) {
+        this.linkInTransaction(record.id, profileId, now)
+        id = record.id
+      } else {
+        if (profile.availability !== 'available') throw new ConflictError('IX Browser no longer reports that profile. Sync profiles, then try again.')
+        id = this.insertFromProfile(profile, now, 'Account record created when the profile was connected')
+      }
+    })
+    this.deps.onChange()
+    return this.require(id!)
+  }
+
+  /**
+   * After a sync: every available profile that has no account (and that you did not disconnect)
+   * gets one and is linked to it, so it can be used right away. Idempotent — a profile is linked
+   * once, and later syncs find it linked. Each profile is linked on its own, so one failure is
+   * reported without blocking the others; the next sync retries it.
+   */
+  linkSyncedProfiles(): LinkOutcome {
+    const now = new Date().toISOString()
+    const failed: LinkOutcome['failed'] = []
+    let linked = 0
+    for (const profile of this.deps.profiles.unlinkedAvailable()) {
+      try {
+        this.deps.accounts.transaction(() => {
+          // Re-checked inside the transaction: another path may have linked it since the list was read.
+          if (this.deps.accounts.byProfile(profile.id)) return
+          this.insertFromProfile(profile, now, 'Account record created automatically when the profile was synced')
+          linked++
+        })
+      } catch (error) {
+        failed.push({ profileId: profile.id, name: profile.name, reason: error instanceof Error ? error.message.slice(0, 200) : 'Could not be linked.' })
+      }
+    }
+    if (linked) {
+      this.deps.log.info(`Linked ${linked} synced profile(s) automatically`)
+      this.deps.onChange()
+    }
+    return { linked, failed }
   }
 
   async openProfile(id: string): Promise<ProfileOperationResult> {
@@ -222,6 +268,27 @@ export class AccountService {
   }
 
   // ── internals ────────────────────────────────────────────────────────────
+
+  /** Inserts an account record for a profile and links it (inside the caller's transaction). */
+  private insertFromProfile(profile: BrowserProfile, now: string, message: string): string {
+    const id = randomUUID()
+    this.deps.accounts.insert({
+      id,
+      label: profile.name.trim().slice(0, 80) || `Profile #${profile.externalId}`,
+      handle: null,
+      identity: 'unknown',
+      identityConfirmedAt: null,
+      profileId: null,
+      linkedAt: null,
+      enabled: true,
+      notes: '',
+      createdAt: now,
+      updatedAt: now
+    })
+    this.event(id, 'created', message, now)
+    this.linkInTransaction(id, profile.id, now)
+    return id
+  }
 
   private linkedExternalId(id: string): number {
     const account = this.require(id)
@@ -242,6 +309,7 @@ export class AccountService {
 
     const previous = record.profileId ? this.deps.profiles.get(record.profileId) : null
     this.deps.accounts.update({ ...record, profileId, linkedAt: now, updatedAt: now })
+    if (profile.linkExcludedAt) this.deps.profiles.setLinkExcluded(profileId, null)
     if (previous) this.event(id, 'unlinked', `Unlinked from profile “${previous.name}” (#${previous.externalId})`, now)
     this.event(id, 'linked', `Linked to profile “${profile.name}” (#${profile.externalId})`, now)
     this.deps.log.info(`Linked account ${short(id)} to profile ${profile.externalId}`)

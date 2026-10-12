@@ -55,6 +55,8 @@ export interface BrowserProfile {
   statusCheckedAt: Timestamp | null
   /** Change seen in the most recent sync. */
   lastChange: 'new' | 'updated' | 'unchanged' | 'unavailable'
+  /** You disconnected this profile's account: syncs leave it unlinked until you connect it again. */
+  linkExcludedAt: Timestamp | null
   /** Additional non-sensitive fields returned by the API, shown as-is. */
   metadata: Record<string, string | number | boolean>
 }
@@ -71,6 +73,11 @@ export interface SyncRun {
   updated: number
   unavailable: number
   duplicates: number
+  /** Profiles linked to an account automatically after this sync. */
+  linked: number
+  /** Profiles that could not be linked (see linkErrors); syncing again retries them. */
+  linkFailed: number
+  linkErrors: { profileId: Id; name: string; reason: string }[]
   error: string | null
 }
 

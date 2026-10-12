@@ -13,7 +13,8 @@ type View = 'accounts' | 'profiles' | 'proxies'
 
 export function AccountsPage() {
   const [viewParam, setView] = useQueryParam('view')
-  const view: View = viewParam === 'profiles' || viewParam === 'proxies' ? viewParam : 'accounts'
+  // Profiles first: syncing links every profile to an account, so the accounts list is for details (usernames, enable/disable).
+  const view: View = viewParam === 'accounts' || viewParam === 'proxies' ? viewParam : 'profiles'
   const overview = useIxOverview()
   const accounts = useAccounts()
   const proxies = useProxies()
@@ -22,12 +23,12 @@ export function AccountsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader title={NAV_ITEMS.accounts.label} description={NAV_ITEMS.accounts.description} />
       <Tabs<View>
-        aria-label="Accounts and profiles"
+        aria-label="Profiles, accounts and proxies"
         value={view}
-        onChange={(next) => setView(next === 'accounts' ? '' : next)}
+        onChange={(next) => setView(next === 'profiles' ? '' : next)}
         items={[
+          { value: 'profiles', label: 'Profiles', icon: Globe, count: overview.data?.counts.total },
           { value: 'accounts', label: 'X accounts', icon: UsersRound, count: accounts.data?.length },
-          { value: 'profiles', label: 'Browser profiles', icon: Globe, count: overview.data?.counts.total },
           { value: 'proxies', label: 'Proxies', icon: Shield, count: proxies.data?.length }
         ]}
       />

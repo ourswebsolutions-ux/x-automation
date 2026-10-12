@@ -24,7 +24,8 @@ const load = (): CampaignChoices => {
 }
 
 /**
- * Campaign Automation: Post or Repost, profiles, posts, run time — then Start. Runs on the
+ * Campaigns: Post, Repost or Comment, posts, run time — then Start; every eligible synchronized
+ * profile takes part (no profile selection). Runs on the
  * existing automation engine and publishing queue (account check, one post at a time per profile,
  * posts with an unconfirmed outcome wait for your review).
  */
@@ -117,12 +118,12 @@ export function CampaignsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={NAV_ITEMS.campaigns.label} description="Post, repost or comment from your profiles — choose the profiles, the content and when to run." />
+      <PageHeader title={NAV_ITEMS.campaigns.label} description="Post your saved posts (with their comments) from every synchronized profile, now or at a date and time — or plan repost and comment tasks." />
 
       {viewRun && <RunPanel runId={viewRun} />}
 
       <div className="grid grid-cols-1 gap-4 @5xl:grid-cols-[minmax(0,1fr)_320px]">
-        <CampaignForm value={choices} onChange={setChoices} />
+        <CampaignForm value={choices} onChange={setChoices} plan={plan} checking={checking} />
         <aside aria-label="Start" className="flex flex-col gap-3 self-start rounded-lg border border-line bg-surface-2 px-5 py-4 @5xl:sticky @5xl:top-0">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-medium text-fg">Start</h2>
@@ -131,7 +132,8 @@ export function CampaignsPage() {
           {plan && (
             <p className="text-sm text-fg-muted">
               {summary}
-              {plan.profiles.selected > plan.profiles.eligible ? ` · ${plan.profiles.selected - plan.profiles.eligible} of the selected profiles can’t be used (not available or no confirmed account)` : ''}
+              {plan.profiles.selected > plan.profiles.eligible ? ` · ${plan.profiles.selected - plan.profiles.eligible} of your synchronized profiles can’t be used right now` : ''}
+              {plan.comments ? ` · ${pluralize(plan.comments, 'comment')} after the posts` : ''}
               {plan.firstRunAt ? ` · from ${formatDateTime(plan.firstRunAt)}` : ''}
             </p>
           )}

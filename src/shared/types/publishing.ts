@@ -62,6 +62,10 @@ export interface PublishProblem {
     | 'already-published'
     | 'spacing'
     | 'in-past'
+    | 'comment-empty'
+    | 'comment-too-long'
+    | 'comment-length'
+    | 'no-eligible'
   message: string
   /** False = a warning the user can accept. */
   blocking: boolean
@@ -91,6 +95,30 @@ export interface MultiScheduleInput {
   runAt: Timestamp | null
   /** The same text from more than one account must be allowed explicitly. */
   allowSameText: boolean
+}
+
+/**
+ * The accounts a post goes out from: every enabled account whose synced IX Browser profile is
+ * available. Decided by the main process — the renderer never picks accounts.
+ */
+export interface PublishTargets {
+  eligible: { accountId: Id; label: string; handle: string | null; identityConfirmed: boolean }[]
+  /** Linked accounts that can't post right now, with the reason. */
+  unavailable: { accountId: Id; label: string; reason: string }[]
+  /** Synced profiles, in any state. */
+  profiles: number
+}
+
+/** Publish (runAt null) or schedule one saved post from every eligible account. */
+export interface PublishAllInput {
+  draftId: Id
+  runAt: Timestamp | null
+  /** Needed when more than one account would post the same text. */
+  allowSameText: boolean
+}
+
+export interface PublishAllCheck extends PublishCheck {
+  targets: PublishTargets
 }
 
 export interface MultiScheduleResult {

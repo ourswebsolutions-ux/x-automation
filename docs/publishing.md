@@ -33,13 +33,32 @@
 | Post clicked, no confirmation in 45 s, and the account's username is confirmed | **Profile check** (Phase 12): the engine opens `x.com/<username>` and looks for the exact text among the latest posts. **Found:** published, with the link saved and the result marked *verified by profile check*. **Not found, or the check failed:** needs review (below) |
 | Post clicked, no confirmation and no profile check possible; engine crashed or timed out after the click; app closed during a publish | **Needs review**, never retried. The user checks X and marks it *posted* (optionally with its link) or *not posted* (and may then retry) |
 
-**One manual post from several accounts:**
-- *Publish now* and *Schedule…* include **Also post from other accounts**.
+**One post from every synchronized profile:**
+- **Publish…** in Create Post publishes now or schedules the post from every eligible account: an
+  enabled account on a profile IX Browser still reports. The main process decides which accounts
+  (`publishing.targets`); there is no account selection.
 - Every account is checked before anything changes.
 - The draft goes to the first account. Each other account gets an independent copy with the same
-  text and images, so each post has its own schedule, task and link.
+  text, images and comment, so each post has its own schedule, task and link.
 - The same text from several accounts must be allowed explicitly with a switch, because X can treat
   it as repeated or coordinated content.
+
+## Comments (replies to your own post)
+
+A post can carry a comment (Create Post → Comment). It is posted after the post, never instead of it:
+
+| Situation | Outcome |
+| --- | --- |
+| The post is confirmed with its link | A `reply` task is queued in the same transaction (idempotency key `reply:<publish task id>`). The same account opens X's post web intent `/intent/post?in_reply_to=<post id>` in the same profile, types the comment, clicks **Reply** once and waits for X's link |
+| The post failed, or was never confirmed | No comment is queued |
+| The post was confirmed by you without its link | No comment (there is nothing to reply to); a notice asks you to post it yourself |
+| The comment fails before submitting (composer didn't load, profile didn't open) | Retried with the usual backoff, then failed with a plain reason. The post stays published |
+| Submitted, no confirmation | The engine looks for the comment on the account's **Replies** tab (confirmed usernames only); otherwise *needs review*, never retried blindly. Confirming it in the review dialog records only the comment |
+| Signed out, wrong account, text not taken | Failed, nothing posted (the same checks as for posts) |
+| A campaign is stopped | Comments that haven't started are cancelled |
+
+A comment only ever answers the account's own post, which it just published. It is never sent to
+anyone else's post or from another account.
 
 How this is enforced:
 

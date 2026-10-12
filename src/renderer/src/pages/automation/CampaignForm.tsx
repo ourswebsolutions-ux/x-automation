@@ -1,23 +1,22 @@
-import { Link2, SquarePen } from 'lucide-react'
+import { Link2, RefreshCw, SquarePen, UsersRound } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
-import type { AutomationConfig } from '@shared/types/automation'
-import { Button, Checkbox, Field, Input, SearchField, SegmentedControl, Switch, Textarea } from '@/components/ui'
+import type { AutomationConfig, RunPlan } from '@shared/types/automation'
+import { Button, Checkbox, Field, Input, SearchField, SegmentedControl, Spinner, Switch, Textarea, useToast } from '@/components/ui'
 import { useDrafts } from '@/data/drafts'
 import { useLinks } from '@/data/links'
+import { errorMessage, relay } from '@/lib/bridge'
 import { NAV_ITEMS } from '@/app/navigation'
 import { DraftPicker } from './DraftPicker'
-import { ProfileTargets } from './ProfileTargets'
 
 export type CampaignAction = 'post' | 'repost' | 'comment'
 
-/** The four choices of a campaign; everything else is fixed (see toConfig). */
+/** The choices of a campaign; everything else is fixed (see toConfig). Profiles are never chosen: every eligible synchronized profile takes part. */
 export interface CampaignChoices {
   name: string
   action: CampaignAction
-  targets: AutomationConfig['targets']
   draftIds: string[]
-  /** Post each selected post from every selected profile (repeated content) instead of spreading them. */
+  /** Post each selected post from every profile (repeated content) instead of spreading them. */
   everyProfile: boolean
   /** Repost / comment targets (post links). */
   repostLinks: string[]
@@ -30,7 +29,6 @@ export interface CampaignChoices {
 export const defaultChoices = (): CampaignChoices => ({
   name: 'My campaign',
   action: 'post',
-  targets: { scope: 'all', profileIds: [], distribution: 'unique', allowDuplicates: false, requireConfirmedIdentity: true, createMissingAccounts: false },
   draftIds: [],
   everyProfile: false,
   repostLinks: [],
@@ -40,11 +38,13 @@ export const defaultChoices = (): CampaignChoices => ({
 })
 
 /**
- * The automation config for these choices, on the existing campaign engine. Fixed: posted
- * automatically, signed-in account always checked, one post per slot (queue spacing applies),
- * no end date / posting days / hours. Reposts and comments are tasks you complete in the profile —
- * one of your accounts per post (several of your accounts on one post is coordinated engagement);
- * the comment is your own text.
+ * The automation config for these choices, on the existing campaign engine. Fixed: every eligible
+ * synchronized profile (the main process decides which when the campaign starts), posted
+ * automatically, the signed-in account checked wherever its X username is confirmed, one post per
+ * slot (queue spacing applies), no end date / posting days / hours. A saved post's comment goes out
+ * as a reply from the same account after the post. Reposts and comments on Post Links are tasks you
+ * complete in the profile — one of your accounts per post (several of your accounts on one post is
+ * coordinated engagement); the comment is your own text.
  */
 export function toConfig(c: CampaignChoices): AutomationConfig {
   const posting = c.action === 'post'
@@ -74,7 +74,7 @@ export function toConfig(c: CampaignChoices): AutomationConfig {
       imageSize: '1024x1024',
       existingAssetId: null
     },
-    targets: { ...c.targets, distribution: posting && c.everyProfile ? 'same' : 'unique', allowDuplicates: posting && c.everyProfile, requireConfirmedIdentity: true, createMissingAccounts: false },
+    targets: { scope: 'all', profileIds: [], distribution: posting && c.everyProfile ? 'same' : 'unique', allowDuplicates: posting && c.everyProfile, requireConfirmedIdentity: false, createMissingAccounts: true },
     actions: {
       publish: posting,
       saveDrafts: false,
@@ -95,7 +95,6 @@ export function choicesFrom(config: AutomationConfig): CampaignChoices {
   return {
     ...base,
     name: config.name,
-    targets: { ...base.targets, scope: config.targets.scope, profileIds: config.targets.profileIds },
     draftIds: config.content.source === 'drafts' ? config.content.draftIds : [],
     when: config.schedule.when,
     startAt: config.schedule.startAt
@@ -121,8 +120,53 @@ function Section({ step, title, children }: { step: number; title: string; child
   )
 }
 
-/** Campaign: action → profiles → posts → run time. */
-export function CampaignForm({ value, onChange }: { value: CampaignChoices; onChange: (next: CampaignChoices) => void }) {
+/** Who takes part: every eligible synchronized profile (counted by the main process), with a way to sync. */
+function Participants({ plan, checking }: { plan: RunPlan | null; checking: boolean }) {
+  const toast = useToast()
+  const navigate = useNavigate()
+  const [syncing, setSyncing] = useState(false)
+  const sync = async () => {
+    setSyncing(true)
+    try {
+      const run = await relay.ixbrowser.sync()
+      toast({ tone: run.linkFailed ? 'warning' : 'success', title: 'Profiles synchronized', description: `${run.discovered} found · ${run.linked} newly linked${run.linkFailed ? ` · ${run.linkFailed} could not be linked` : ''}` })
+    } catch (error) {
+      toast({ tone: 'danger', title: 'Sync failed', description: errorMessage(error), duration: 9000 })
+    } finally {
+      setSyncing(false)
+    }
+  }
+  const p = plan?.profiles
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <UsersRound size={15} className="text-fg-subtle" />
+      <span className="text-sm text-fg" aria-live="polite">
+        {!p ? (
+          checking ? <Spinner size={12} /> : 'Checking your profiles…'
+        ) : p.selected === 0 ? (
+          'No profiles are synchronized yet. Sync profiles first.'
+        ) : (
+          <>
+            <strong className="tabular font-semibold">{p.eligible}</strong> of {p.selected} synchronized {p.selected === 1 ? 'profile takes' : 'profiles take'} part
+            {p.unavailable ? <span className="text-fg-subtle"> · {p.unavailable} unavailable</span> : null}
+            {p.selected - p.unavailable - p.eligible > 0 ? <span className="text-fg-subtle"> · {p.selected - p.unavailable - p.eligible} disabled for tasks</span> : null}
+          </>
+        )}
+      </span>
+      <span className="ml-auto flex items-center gap-1">
+        <Button size="sm" variant="ghost" onClick={() => navigate('/accounts?view=profiles')}>
+          View profiles
+        </Button>
+        <Button size="sm" variant={p?.selected === 0 ? 'primary' : 'ghost'} icon={RefreshCw} loading={syncing} onClick={sync}>
+          Sync profiles
+        </Button>
+      </span>
+    </div>
+  )
+}
+
+/** Campaign: action → posts → run time. Profiles aren't chosen: every eligible synchronized profile takes part. */
+export function CampaignForm({ value, onChange, plan, checking }: { value: CampaignChoices; onChange: (next: CampaignChoices) => void; plan: RunPlan | null; checking: boolean }) {
   const navigate = useNavigate()
   const drafts = useDrafts()
   const set = (patch: Partial<CampaignChoices>) => onChange({ ...value, ...patch })
@@ -154,7 +198,7 @@ export function CampaignForm({ value, onChange }: { value: CampaignChoices; onCh
       </Section>
 
       <Section step={2} title="Profiles">
-        <ProfileTargets value={value.targets} onChange={(targets) => set({ targets })} publishing simple />
+        <Participants plan={plan} checking={checking} />
       </Section>
 
       <Section step={3} title={value.action === 'post' ? 'Posts' : value.action === 'repost' ? 'Posts to repost' : 'Posts to comment on'}>
@@ -170,12 +214,17 @@ export function CampaignForm({ value, onChange }: { value: CampaignChoices; onCh
             <>
               {drafts.data && <p className="text-xs text-fg-subtle">{usable.length} saved {usable.length === 1 ? 'post' : 'posts'} available · add more in Create Post</p>}
               <DraftPicker value={value.draftIds} onChange={(draftIds) => set({ draftIds })} />
+              {plan && plan.comments > 0 && (
+                <p className="text-xs text-fg-subtle">
+                  {plan.comments === 1 ? 'One post has a comment' : `${plan.comments} posts have a comment`}: each is posted as a reply by the same account, right after X confirms its post.
+                </p>
+              )}
               <label className="flex items-center justify-between gap-3 text-sm">
                 <span className="flex flex-col">
-                  <span className="text-fg">Post each one from every selected profile</span>
-                  <span className="text-xs text-fg-subtle">Off: the posts are shared out, one profile each. On: the same text from several accounts, which X can limit.</span>
+                  <span className="text-fg">Post each one from every profile</span>
+                  <span className="text-xs text-fg-subtle">Off: the posts are shared out, one profile each. On: the same text (and comment) from several accounts, which X can limit.</span>
                 </span>
-                <Switch checked={value.everyProfile} onChange={(everyProfile) => set({ everyProfile })} aria-label="Post each one from every selected profile" />
+                <Switch checked={value.everyProfile} onChange={(everyProfile) => set({ everyProfile })} aria-label="Post each one from every profile" />
               </label>
             </>
           )
@@ -183,7 +232,7 @@ export function CampaignForm({ value, onChange }: { value: CampaignChoices; onCh
           <>
             <LinkPicker value={value.repostLinks} onChange={(repostLinks) => set({ repostLinks })} />
             {value.action === 'comment' && (
-              <Field label="Your comment" htmlFor="camp-comment" hint="Relevant to the post and written by you; copied into each task — you post it yourself.">
+              <Field label="Your comment" htmlFor="camp-comment" hint="Relevant to the post and written by you; copied into each task — you post it yourself. (To comment on your own new posts, add the comment in Create Post.)">
                 <Textarea id="camp-comment" rows={3} maxLength={280} value={value.commentText} onChange={(e) => set({ commentText: e.target.value })} />
               </Field>
             )}
@@ -212,7 +261,7 @@ export function CampaignForm({ value, onChange }: { value: CampaignChoices; onCh
             wrapperClassName="w-60"
           />
         )}
-        <p className="text-xs text-fg-subtle">Posts go out while X Auto is running, one at a time per profile.</p>
+        <p className="text-xs text-fg-subtle">Any future date and time, in this computer’s time zone. Posts go out while X Auto is running (the window can be closed), one at a time per profile.</p>
       </Section>
     </div>
   )

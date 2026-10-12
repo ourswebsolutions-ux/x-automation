@@ -32,6 +32,7 @@ const fromRow = (r: Row): BrowserProfile => ({
   lastSyncedAt: str(r.synced_at),
   statusCheckedAt: strOrNull(r.status_checked_at),
   lastChange: r.last_change as BrowserProfile['lastChange'],
+  linkExcludedAt: strOrNull(r.link_excluded_at),
   metadata: parseJson(r.metadata, {})
 })
 
@@ -45,6 +46,9 @@ const runFromRow = (r: Row): SyncRun => ({
   updated: Number(r.updated),
   unavailable: Number(r.unavailable),
   duplicates: Number(r.duplicates),
+  linked: Number(r.linked ?? 0),
+  linkFailed: Number(r.link_failed ?? 0),
+  linkErrors: parseJson<SyncRun['linkErrors']>(r.link_errors, []),
   error: strOrNull(r.error)
 })
 
@@ -181,10 +185,12 @@ export class ProfileRepository {
     })
   }
 
-  finishRun(run: Omit<SyncRun, 'startedAt'>): void {
+  /** Link results are optional for runs that ended before linking (failed or cancelled syncs). */
+  finishRun(run: Omit<SyncRun, 'startedAt' | 'linked' | 'linkFailed' | 'linkErrors'> & Partial<Pick<SyncRun, 'linked' | 'linkFailed' | 'linkErrors'>>): void {
     this.db.run(
       `UPDATE profile_sync_runs SET status = :status, finished_at = :finishedAt, discovered = :discovered, added = :added,
-         updated = :updated, unavailable = :unavailable, duplicates = :duplicates, error = :error WHERE id = :id`,
+         updated = :updated, unavailable = :unavailable, duplicates = :duplicates, linked = :linked, link_failed = :linkFailed,
+         link_errors = :linkErrors, error = :error WHERE id = :id`,
       {
         id: run.id,
         status: run.status,
@@ -194,9 +200,34 @@ export class ProfileRepository {
         updated: run.updated,
         unavailable: run.unavailable,
         duplicates: run.duplicates,
+        linked: run.linked ?? 0,
+        linkFailed: run.linkFailed ?? 0,
+        linkErrors: JSON.stringify((run.linkErrors ?? []).slice(0, 50)),
         error: run.error
       }
     )
+  }
+
+  /** Available profiles no account is linked to and the user has not disconnected (candidates for automatic linking). */
+  unlinkedAvailable(): BrowserProfile[] {
+    return this.db
+      .all<Row>(
+        `SELECT p.* FROM browser_profiles p
+         WHERE p.availability = 'available' AND p.link_excluded_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.browser_profile_id = p.id)
+         ORDER BY p.name COLLATE NOCASE`
+      )
+      .map(fromRow)
+  }
+
+  /** Disconnected by the user (at, and the account that was linked) or connected again (null). */
+  setLinkExcluded(id: string, at: string | null, accountId: string | null = null): void {
+    this.db.run('UPDATE browser_profiles SET link_excluded_at = :at, disconnected_account_id = :accountId WHERE id = :id', { id, at, accountId: at ? accountId : null })
+  }
+
+  /** The account that was linked when the user disconnected this profile (null if none or removed). */
+  disconnectedAccount(id: string): string | null {
+    return this.db.get<{ a: string | null }>('SELECT disconnected_account_id AS a FROM browser_profiles WHERE id = :id', { id })?.a ?? null
   }
 
   /** Closes runs left "running" by a crash or forced quit. */

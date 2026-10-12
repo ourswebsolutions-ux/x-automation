@@ -50,7 +50,7 @@ const endpoint = `http://127.0.0.1:${mock.port}/v1`
 const path = process.argv[2]!
 for (const s of ['', '-wal', '-shm']) rmSync(path + s, { force: true })
 const db = new SqliteDatabase(path).open()
-check('migrate → v12', migrate(db, log) === 12)
+check('migrate → v13', migrate(db, log) === 13)
 const repos = createSqliteRepositories(db)
 const P = '11111111-1111-4111-8111-111111111111'
 db.exec(`INSERT INTO provider_configs (id, kind, adapter, name, endpoint, model, created_at, updated_at) VALUES ('${P}','openai-compatible','openai','Mock','${endpoint}','gpt-test-mini','x','x')`)

@@ -1,10 +1,10 @@
-import { Bot, Copy, Eraser, RotateCcw, Save, Sparkles, Trash2 } from 'lucide-react'
+import { Bot, Copy, Eraser, MessageSquareReply, RotateCcw, Save, Sparkles, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { composePost, LENGTH_PROFILE_LIST, type LengthProfileId } from '@shared/config/postLimits'
-import type { Account } from '@shared/types/accounts'
-import type { Draft, MediaAttachment } from '@shared/types/domain'
+import { commentProblems, NO_COMMENT } from '@shared/lib/postComment'
+import type { Draft, MediaAttachment, PostComment } from '@shared/types/domain'
 import type { ImageAsset } from '@shared/types/images'
-import { Button, ConfirmDialog, Field, IconButton, KeyCombo, SegmentedControl, Select, StatusBadge, Textarea, Tooltip, useToast } from '@/components/ui'
+import { Button, ConfirmDialog, Field, IconButton, KeyCombo, SegmentedControl, Select, StatusBadge, Switch, Textarea, Tooltip, useToast } from '@/components/ui'
 import { AssetLibraryDialog, importSummary } from '@/components/feature/AssetLibraryDialog'
 import { errorMessage, relay } from '@/lib/bridge'
 import { HashtagInput } from '@/components/feature/HashtagInput'
@@ -24,17 +24,17 @@ export interface EditorValue {
   body: string
   hashtags: string[]
   status: 'draft' | 'ready'
-  accountId: string | null
   aiAssisted: boolean
   sourceGenerationId: string | null
   /** Attached images in order (descriptions included). */
   media: MediaAttachment[]
+  /** Posted as a reply to this post by each account that posts it. */
+  comment: PostComment
 }
 
 interface DraftEditorProps {
   /** The saved draft being edited, or null for a new one. */
   draft: Draft | null
-  accounts: Account[]
   saving: boolean
   onSave: (value: EditorValue) => void
   onSaveAsNew: (value: EditorValue) => Promise<void>
@@ -47,19 +47,20 @@ const fromDraft = (draft: Draft | null): EditorValue => ({
   body: draft?.body ?? '',
   hashtags: draft?.hashtags ?? [],
   status: draft?.status === 'ready' ? 'ready' : 'draft',
-  accountId: draft?.accountId ?? null,
   aiAssisted: false,
   sourceGenerationId: draft?.sourceGenerationId ?? null,
-  media: draft?.media ?? []
+  media: draft?.media ?? [],
+  comment: draft?.comment ?? NO_COMMENT
 })
 
 const mediaKey = (media: MediaAttachment[]) => media.map((m) => `${m.id}:${m.altText}`).join('\u0000')
 const same = (a: EditorValue, b: EditorValue) =>
   a.body === b.body &&
   a.status === b.status &&
-  a.accountId === b.accountId &&
   a.hashtags.join('\u0000') === b.hashtags.join('\u0000') &&
-  mediaKey(a.media) === mediaKey(b.media)
+  mediaKey(a.media) === mediaKey(b.media) &&
+  a.comment.enabled === b.comment.enabled &&
+  a.comment.text === b.comment.text
 
 /** The writing area for one draft. Nothing is saved until the user saves. */
 export function DraftEditor(props: DraftEditorProps) {
@@ -83,24 +84,30 @@ export function DraftEditor(props: DraftEditorProps) {
     requestAnimationFrame(() => textareaRef.current?.focus())
   }, [draft?.id])
 
+  // Status changes come from saving or from publishing (scheduled, failed, back to drafts):
+  // either way the saved draft is the truth. Reset during render, so no render sees the old
+  // value against the new draft (that briefly looked like unsaved changes).
+  const [statusSeen, setStatusSeen] = useState(draft?.status)
+  if (draft?.status !== statusSeen) {
+    setStatusSeen(draft?.status)
+    setValue(fromDraft(draft))
+  }
+
   const editable = !draft || draft.status === 'draft' || draft.status === 'ready'
   // A draft that became scheduled/published (possibly while open) has nothing unsaved.
-  const dirty = editable && !same(value, saved)
+  const dirty = editable && draft?.status === statusSeen && !same(value, saved)
   const { onDirtyChange } = props
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange])
-  // Status changes come from saving or from publishing (scheduled, failed, back to drafts):
-  // either way the saved draft is the truth.
-  useEffect(() => {
-    setValue(fromDraft(draft))
-  }, [draft?.status])
 
   const composed = composePost(value.body, value.hashtags)
   const length = useMemo(() => measurePost(composed, profile.maxWeighted), [composed, profile.maxWeighted])
   const empty = !value.body.trim() && value.hashtags.length === 0 && value.media.length === 0
   const problems = mediaProblems(value.media)
   const mediaInvalid = Boolean(problems.set) || Object.keys(problems.byId).length > 0
-  const canSave = editable && !empty && !mediaInvalid && (dirty || !draft) && !props.saving
-  const account = props.accounts.find((a) => a.id === value.accountId) ?? null
+  const comment = commentProblems(value.comment)
+  const commentBlocked = comment.some((p) => p.blocking)
+  const commentLength = useMemo(() => measurePost(value.comment.text.trim(), profile.maxWeighted), [value.comment.text, profile.maxWeighted])
+  const canSave = editable && !empty && !mediaInvalid && !commentBlocked && (dirty || !draft) && !props.saving
 
   useEffect(() => {
     const el = textareaRef.current
@@ -164,22 +171,11 @@ export function DraftEditor(props: DraftEditorProps) {
         )}
       </header>
 
-      {!editable && draft && <PublishStatus draft={draft} accounts={props.accounts} />}
+      {!editable && draft && <PublishStatus draft={draft} />}
 
       <div className="flex flex-col gap-3 px-4 py-3.5">
+        <h3 className="text-2xs font-medium uppercase tracking-[0.07em] text-fg-faint">Post</h3>
         <div className="flex flex-wrap items-center gap-2">
-          <Select<string>
-            size="sm"
-            className="w-56"
-            aria-label="Account"
-            disabled={!editable}
-            value={value.accountId ?? 'none'}
-            onChange={(id) => set({ accountId: id === 'none' ? null : id })}
-            options={[
-              { value: 'none', label: 'No account' },
-              ...props.accounts.map((a) => ({ value: a.id, label: a.label, description: a.handle ? `@${a.handle}` : a.enabled ? undefined : 'Disabled' }))
-            ]}
-          />
           <SegmentedControl<'draft' | 'ready'>
             size="sm"
             disabled={!editable}
@@ -248,6 +244,45 @@ export function DraftEditor(props: DraftEditorProps) {
         </div>
       </div>
 
+      <section aria-label="Comment" className="flex flex-col gap-2.5 border-t border-line px-4 py-3.5">
+        <div className="flex items-center gap-2">
+          <MessageSquareReply size={14} className="text-fg-subtle" />
+          <h3 className="text-sm font-medium text-fg">Comment</h3>
+          <span className="text-xs text-fg-subtle">Optional · posted as a reply to this post</span>
+          <span className="flex-1" />
+          <Switch
+            checked={value.comment.enabled}
+            disabled={!editable}
+            onChange={(enabled) => set({ comment: { ...value.comment, enabled } })}
+            aria-label="Post a comment under this post"
+          />
+        </div>
+        {value.comment.enabled && (
+          <>
+            <Textarea
+              value={value.comment.text}
+              disabled={!editable}
+              rows={3}
+              placeholder="Add a comment to your post (for example a link or more detail)"
+              aria-label="Comment text"
+              invalid={commentBlocked}
+              onChange={(e) => set({ comment: { ...value.comment, text: e.target.value } })}
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="min-w-0 flex-1 text-xs text-fg-subtle">
+                Each profile that posts this replies to its own post with this comment, right after X confirms the post. It is never posted on anyone else’s post.
+              </span>
+              <LengthMeter length={commentLength} />
+            </div>
+            {comment.map((p) => (
+              <p key={p.code} role={p.blocking ? 'alert' : undefined} className={cn('text-xs', p.blocking ? 'text-danger' : 'text-warning')}>
+                {p.message}
+              </p>
+            ))}
+          </>
+        )}
+      </section>
+
       {imageOpen && (
         <ImagePanel
           postText={composed}
@@ -276,7 +311,13 @@ export function DraftEditor(props: DraftEditorProps) {
 
       <div className="flex flex-col gap-2 border-t border-line px-4 py-3.5">
         <span className="text-2xs font-medium uppercase tracking-[0.07em] text-fg-faint">Preview</span>
-        <PostPreview text={composed} name={account?.label ?? 'Your account'} handle={account?.handle ?? null} media={value.media} />
+        <PostPreview text={composed} name="Your account" handle={null} media={value.media} />
+        {value.comment.enabled && value.comment.text.trim() && (
+          <div className="ml-6 flex flex-col gap-1 border-l-2 border-line pl-3">
+            <span className="text-2xs font-medium uppercase tracking-[0.07em] text-fg-faint">Comment (reply)</span>
+            <PostPreview text={value.comment.text.trim()} name="Your account" handle={null} media={[]} />
+          </div>
+        )}
       </div>
 
       <footer className="flex flex-wrap items-center gap-2 rounded-b-lg border-t border-line bg-surface-1/50 px-4 py-2.5">
@@ -284,7 +325,7 @@ export function DraftEditor(props: DraftEditorProps) {
           <KeyCombo keys={[MOD_LABEL, 'S']} /> to save
         </span>
         {/* Stays mounted after publishing starts (the post is then locked) so the progress dialog remains open. */}
-        {draft && <PublishActions draft={draft} dirty={dirty} editable={editable} accountId={value.accountId} accounts={props.accounts} />}
+        {draft && <PublishActions draft={draft} dirty={dirty} editable={editable} />}
         {draft && editable && <span className="mx-1 h-5 w-px bg-line" aria-hidden />}
         <Button size="sm" variant="ghost" icon={Eraser} disabled={!editable || empty} onClick={() => setConfirm('clear')}>
           Clear
@@ -314,7 +355,7 @@ export function DraftEditor(props: DraftEditorProps) {
         description={
           confirm === 'clear'
             ? draft
-              ? 'The editor is emptied. Nothing is saved until you save — Reset brings back the saved version.'
+              ? 'The editor is emptied, including the comment. Nothing is saved until you save — Reset brings back the saved version.'
               : 'Everything you typed in this new draft is removed.'
             : 'The editor goes back to the last saved version of this draft.'
         }
@@ -322,7 +363,7 @@ export function DraftEditor(props: DraftEditorProps) {
         tone="danger"
         onCancel={() => setConfirm(null)}
         onConfirm={() => {
-          if (confirm === 'clear') set({ body: '', hashtags: [], media: [] })
+          if (confirm === 'clear') set({ body: '', hashtags: [], media: [], comment: NO_COMMENT })
           else setValue(saved)
           setConfirm(null)
         }}

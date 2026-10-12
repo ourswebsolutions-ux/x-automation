@@ -126,7 +126,7 @@ export function CommandPalette() {
         hint: account.handle ? `@${account.handle}` : account.profile ? `#${account.profile.externalId}` : 'Account',
         icon: UsersRound,
         keywords: `${account.handle ?? ''} ${account.profile?.name ?? ''} ${account.profile?.externalId ?? ''}`,
-        run: go(`/accounts?q=${encodeURIComponent(account.label)}`)
+        run: go(`/accounts?view=accounts&q=${encodeURIComponent(account.label)}`)
       })),
       ...drafts.map((draft) => ({
         id: `draft-${draft.id}`,
@@ -146,7 +146,7 @@ export function CommandPalette() {
           hint: account.displayName,
           icon: UsersRound,
           keywords: `${account.group} ${account.tags.join(' ')}`,
-          run: go(`/accounts?q=${encodeURIComponent(account.handle)}`)
+          run: go(`/accounts?view=accounts&q=${encodeURIComponent(account.handle)}`)
         })),
         ...DEMO_TASKS.map((task) => ({
           id: task.id,

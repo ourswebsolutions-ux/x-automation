@@ -43,6 +43,31 @@ const STAGES: Record<string, string> = {
   'check-profile': 'Checking the profile for the post'
 }
 
+const REPLY_STAGES: Record<string, string> = {
+  ...STAGES,
+  validate: 'Checking the comment',
+  'open-composer': 'Opening the reply composer',
+  write: 'Writing the comment',
+  submit: 'Posting the comment',
+  'check-profile': 'Checking the profile for the comment'
+}
+
+/** What a reply task carries: the post it answers (published by the same account) and the comment. */
+export interface ReplyPayload {
+  parentTaskId: string
+  parentPostId: string
+  parentUrl: string
+  text: string
+}
+
+export const isReplyPayload = (value: Record<string, unknown>): value is Record<string, unknown> & ReplyPayload =>
+  typeof value.parentTaskId === 'string' &&
+  typeof value.parentPostId === 'string' &&
+  /^\d{1,25}$/.test(value.parentPostId) &&
+  typeof value.parentUrl === 'string' &&
+  typeof value.text === 'string' &&
+  value.text.trim().length > 0
+
 /** Stages after which the post may exist. */
 const SUBMITTED_STAGES = new Set(['submit', 'confirm'])
 
@@ -59,19 +84,26 @@ interface PublishReply extends Record<string, unknown> {
  * failures before the Post button was clicked are safe to retry; once it was
  * clicked, only a confirmed post link counts as success, an explicit refusal
  * by X is a failure, and anything else waits for the user to check X.
+ *
+ * Registered a second time for 'reply' tasks: the comment saved with a post,
+ * posted by the same account as a reply to its own confirmed post, through the
+ * same profile, checks and outcome rules.
  */
 export class PublishHandler implements TaskHandler {
-  readonly kind = 'publish' as const
   readonly idempotent = false
 
-  constructor(private readonly deps: Deps) {}
+  constructor(
+    private readonly deps: Deps,
+    readonly kind: 'publish' | 'reply' = 'publish'
+  ) {}
 
   stageLabel(stage: string): string {
-    return STAGES[stage] ?? stage
+    return (this.kind === 'reply' ? REPLY_STAGES : STAGES)[stage] ?? stage
   }
 
-  /** Keeps posts from one account apart by the configured spacing. */
+  /** Keeps posts from one account apart by the configured spacing (a comment follows its own post directly). */
   notBefore(task: TaskRecord, now: Date): string | null {
+    if (this.kind === 'reply') return null
     const spacing = this.deps.settings().spacingMinutes * 60_000
     if (!task.accountId || spacing <= 0) return null
     const last = this.deps.queueRepo.lastPublishAt(task.accountId)
@@ -86,20 +118,22 @@ export class PublishHandler implements TaskHandler {
 
   async run(task: TaskRecord, context: TaskContext): Promise<PublishResult | null> {
     context.stage('validate')
+    const reply = this.kind === 'reply' ? task.payload : null
+    if (reply && !isReplyPayload(reply)) throw new TaskError('INVALID_COMMENT', 'This comment has no confirmed post to reply to.', 'fail')
     // Never publish twice: a link recorded for this task means it already happened.
-    const existing = this.deps.postLinks.byTask(task.id)
+    const existing = reply ? null : this.deps.postLinks.byTask(task.id)
     if (existing) return { url: existing.url, postId: existing.postId, handle: existing.handle, verifiedBy: 'post-link' }
 
     const draft = task.draftId ? await this.deps.drafts.get(task.draftId) : null
-    if (!draft) throw new TaskError('DRAFT_MISSING', 'The draft was deleted, so there is nothing to publish.', 'fail')
-    if (draft.status === 'published') throw new TaskError('ALREADY_PUBLISHED', 'This draft was already published.', 'fail')
+    if (!reply && !draft) throw new TaskError('DRAFT_MISSING', 'The draft was deleted, so there is nothing to publish.', 'fail')
+    if (!reply && draft!.status === 'published') throw new TaskError('ALREADY_PUBLISHED', 'This draft was already published.', 'fail')
     const account = task.accountId ? this.deps.accounts.get(task.accountId) : null
     if (!account) throw new TaskError('ACCOUNT_MISSING', 'The account for this post no longer exists.', 'fail')
     if (!account.enabled) throw new TaskError('ACCOUNT_DISABLED', `${account.label} is disabled for tasks. Enable it, then retry.`, 'fail')
     if (!account.profile) throw new TaskError('NOT_LINKED', `${account.label} is not linked to an IX Browser profile.`, 'fail')
     if (account.profile.availability === 'unavailable') throw new TaskError('PROFILE_UNAVAILABLE', 'IX Browser no longer reports the linked profile.', 'fail')
-    const text = composePost(draft.body, draft.hashtags)
-    const media = draft.media.map((m) => this.deps.assetFile(m.id))
+    const text = reply && isReplyPayload(reply) ? reply.text.trim() : composePost(draft!.body, draft!.hashtags)
+    const media = reply ? [] : draft!.media.map((m) => this.deps.assetFile(m.id))
     if (media.some((path) => !path)) throw new TaskError('MEDIA_MISSING', 'An attached image is missing from the image folder.', 'fail')
     this.checkCancelled(context)
 
@@ -149,6 +183,7 @@ export class PublishHandler implements TaskHandler {
         confirmTimeoutMs: 45_000
       }
       if (account.handle && account.identity === 'confirmed') params.expectedHandle = account.handle
+      if (reply && isReplyPayload(reply)) params.inReplyTo = reply.parentPostId
       if (this.deps.testBaseUrl) params.baseUrl = this.deps.testBaseUrl
 
       try {
@@ -165,7 +200,7 @@ export class PublishHandler implements TaskHandler {
         const classified = this.classify(error, lastStage)
         // Submitted but unconfirmed: look for the post on the account's profile before asking the user.
         if (classified.disposition === 'review' && account.handle && account.identity === 'confirmed') {
-          const found = await this.findOnProfile(params.endpoint as string, account.handle, text, context)
+          const found = await this.findOnProfile(params.endpoint as string, account.handle, text, context, Boolean(reply))
           if (found) return found
         }
         throw classified
@@ -181,11 +216,13 @@ export class PublishHandler implements TaskHandler {
   }
 
   /** Finds a just-submitted post on the account's profile; null when not found or the check failed. */
-  private async findOnProfile(endpoint: string, handle: string, text: string, context: TaskContext): Promise<PublishResult | null> {
+  private async findOnProfile(endpoint: string, handle: string, text: string, context: TaskContext, replies = false): Promise<PublishResult | null> {
     if (!text.trim()) return null
     context.stage('check-profile')
     try {
       const params: Record<string, unknown> = { endpoint, handle, text, timeoutMs: 20_000 }
+      // Replies are listed on the profile's Replies tab, not its posts.
+      if (replies) params.replies = true
       if (this.deps.testBaseUrl) params.baseUrl = this.deps.testBaseUrl
       const reply = await this.deps.engine.request<{ found: boolean; url?: string; postId?: string; handle?: string }>('x.findPost', params, 60_000)
       if (!reply.found || !reply.url) return null
@@ -215,6 +252,10 @@ export class PublishHandler implements TaskHandler {
     if (context.signal.aborted) throw new TaskError('CANCELLED', 'Stopped before anything was posted.', 'retry')
   }
 
+  private get noun(): string {
+    return this.kind === 'reply' ? 'comment' : 'post'
+  }
+
   /** Turns an engine failure into retry / fail / review, erring on the side of review. */
   private classify(error: unknown, lastStage: string): TaskError {
     const mayHavePosted = SUBMITTED_STAGES.has(lastStage)
@@ -224,8 +265,8 @@ export class PublishHandler implements TaskHandler {
         : new TaskError('PUBLISH_FAILED', 'Publishing stopped before anything was posted.', 'retry')
     }
     if (error.submitted === true || mayHavePosted) {
-      if (error.code === 'REJECTED') return new TaskError('REJECTED', 'X did not accept the post, so it was not published.', 'fail')
-      return new TaskError('OUTCOME_UNKNOWN', 'The post was submitted, but X did not confirm it. Check the account on X before trying again.', 'review')
+      if (error.code === 'REJECTED') return new TaskError('REJECTED', `X did not accept the ${this.noun}, so it was not published.`, 'fail')
+      return new TaskError('OUTCOME_UNKNOWN', `The ${this.noun} was submitted, but X did not confirm it. Check the account on X before trying again.`, 'review')
     }
     switch (error.code) {
       case 'ENGINE_TIMEOUT':
@@ -236,7 +277,7 @@ export class PublishHandler implements TaskHandler {
       case 'CONNECT_TIMEOUT':
         return new TaskError(error.code, 'Could not connect to the profile’s browser.', 'retry')
       case 'COMPOSER_NOT_FOUND':
-        return new TaskError(error.code, 'The X post composer did not load.', 'retry')
+        return new TaskError(error.code, this.kind === 'reply' ? 'The X reply composer did not load.' : 'The X post composer did not load.', 'retry')
       case 'MEDIA_UPLOAD_FAILED':
         return new TaskError(error.code, 'X did not finish taking the images. Nothing was posted.', 'retry')
       case 'SESSION_EXPIRED':
@@ -246,7 +287,7 @@ export class PublishHandler implements TaskHandler {
       case 'TEXT_MISMATCH':
         return new TaskError(error.code, 'The X composer did not take the text exactly, so nothing was posted.', 'fail')
       case 'POST_BUTTON_DISABLED':
-        return new TaskError(error.code, 'X did not allow posting (the post may be too long for this account). Nothing was posted.', 'fail')
+        return new TaskError(error.code, `X did not allow posting (the ${this.noun} may be too long for this account, or replies are limited). Nothing was posted.`, 'fail')
       case 'NO_CONTEXT':
         return new TaskError(error.code, 'The profile’s browser session was not available. Nothing was posted.', 'fail')
       case 'MEDIA_MISSING':

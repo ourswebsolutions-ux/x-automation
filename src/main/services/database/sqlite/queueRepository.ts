@@ -183,7 +183,7 @@ export class QueueRepository {
 
   /** Puts every waiting publish task of an account on hold; returns how many. */
   holdQueuedForAccount(accountId: Id, now: string): number {
-    return this.db.run("UPDATE tasks SET held = 1, updated_at = :now WHERE account_id = :accountId AND kind = 'publish' AND status = 'queued' AND held = 0", { accountId, now }).changes
+    return this.db.run("UPDATE tasks SET held = 1, updated_at = :now WHERE account_id = :accountId AND kind IN ('publish', 'reply') AND status = 'queued' AND held = 0", { accountId, now }).changes
   }
 
   /** Holds or releases a waiting task. */

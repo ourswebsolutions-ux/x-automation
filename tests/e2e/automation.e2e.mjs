@@ -1,8 +1,8 @@
 // Phase 12 end-to-end: AI automation runs in the real Electron app + real Python engine + real Chrome
 // (three headless Chromes stand in for three IX profiles' browsers, reached over CDP) + the local X
 // stand-in (engine/tests/x_fixture.py). IX Browser and OpenAI are contract MOCKS. x.com is NOT contacted.
-// Needs `npm run build` first (the app is launched from out/), Google Chrome at /usr/bin/google-chrome
-// (or CHROME_PATH), and the bundled engine runtime (engine-runtime/<platform>).
+// Needs `npm run build` first (the app is launched from out/), Google Chrome (CHROME_PATH, or the usual
+// install location), and the bundled engine runtime (engine-runtime/<platform>).
 //   node tests/e2e/automation.e2e.mjs        screenshots → $AXORA_TEST_SHOTS (default: a temp folder)
 import { _electron as electron } from 'playwright-core'
 import electronPath from 'electron'
@@ -41,13 +41,16 @@ const fxBase = `http://127.0.0.1:${fxPort}`
 const fxSet = (mode) => fetch(`${fxBase}/__control`, { method: 'POST', body: JSON.stringify({ mode }) })
 const fxPosts = async () => (await fetch(`${fxBase}/__posts`)).json()
 
-const HANDLES = ['relay_a', 'relay_b', 'relay_c']
+// Profile 4's account has no confirmed username: it still posts (from its own browser), without the account check.
+const HANDLES = ['relay_a', 'relay_b', 'relay_c', 'relay_d']
+const CHROME = process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : '/usr/bin/google-chrome')
 const chromes = []
 for (const handle of HANDLES) {
   const port = 9300 + Math.floor(Math.random() * 600)
   const dir = mkdtempSync(join(tmpdir(), 'axora-p12-'))
-  const proc = spawn(process.env.CHROME_PATH ?? '/usr/bin/google-chrome', ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' })
-  cleanups.push(() => { proc.kill('SIGKILL'); setTimeout(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5 }), 500) })
+  const proc = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' })
+  // Windows may still hold the killed browser's files; a leftover temp folder is not a test failure.
+  cleanups.push(() => { proc.kill('SIGKILL'); setTimeout(() => { try { rmSync(dir, { recursive: true, force: true, maxRetries: 5 }) } catch {} }, 500) })
   await waitFor(async () => (await fetch(`http://127.0.0.1:${port}/json/version`)).ok)
   // The stand-in reads the signed-in handle from an `xh` cookie (set through the documented CDP Storage domain).
   const { webSocketDebuggerUrl } = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()
@@ -60,7 +63,7 @@ for (const handle of HANDLES) {
   chromes.push({ handle, port })
 }
 
-// ── IX Browser (mock): 5 profiles; 1–3 open the three browsers ──
+// ── IX Browser (mock): 5 profiles; 1–4 open the four browsers ──
 const ix = await startMock()
 cleanups.push(() => ix.close())
 ix.state.profiles = ix.state.profiles.slice(0, 5)
@@ -75,7 +78,8 @@ ai.state.unique = true
 async function launch() {
   const env = { ...process.env, XDG_CONFIG_HOME: home, AXORA_TEST_X_BASE_URL: fxBase, AXORA_TEST_QUEUE_BACKOFF_MS: '400' }
   delete env.ELECTRON_RUN_AS_NODE
-  const a = await electron.launch({ executablePath: electronPath, args: ['--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', project], env, cwd: project })
+  // --user-data-dir keeps the test away from a real installation's data on every OS (XDG_CONFIG_HOME only covers Linux).
+  const a = await electron.launch({ executablePath: electronPath, args: [`--user-data-dir=${join(home, 'user-data')}`, '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', project], env, cwd: project })
   const p = await a.firstWindow()
   p.on('console', (m) => ['error', 'warning'].includes(m.type()) && problems.push(`[${m.type()}] after "${results.at(-1)?.slice(6, 60)}": ${m.text().slice(0, 160)}`))
   p.on('pageerror', (e) => problems.push(`[pageerror] ${e.message}`))
@@ -116,18 +120,24 @@ const baseConfig = (patch = {}) => {
 ;({ a: app, p: page } = await launch())
 await page.evaluate(() => window.relay.preferences.update({ showDemoData: false }))
 const info = await page.evaluate(() => window.relay.database.info())
-check('schema v12 applied (automation_schedules included)', info.schemaVersion === 12 && info.migrations.at(-1).name === 'automation_schedules')
+check('schema v13 applied (auto_link_and_comments included)', info.schemaVersion === 13 && info.migrations.at(-1).name === 'auto_link_and_comments')
 await page.evaluate((e) => window.relay.providers.create({ kind: 'ixbrowser', name: 'IX (mock)', endpoint: e, model: null, enabled: true }), `http://127.0.0.1:${ix.port}`)
-await page.evaluate(() => window.relay.ixbrowser.sync())
+const sync1 = await page.evaluate(() => window.relay.ixbrowser.sync())
 let profiles = await page.evaluate(() => window.relay.ixbrowser.profiles())
 const prof = (n) => profiles.find((p) => p.externalId === n)
+let accounts = await page.evaluate(() => window.relay.accounts.list())
+check('sync: every profile is linked to an account automatically', sync1.linked === 5 && accounts.length === 5 && profiles.every((p) => accounts.some((a) => a.profile?.id === p.id)), JSON.stringify({ linked: sync1.linked, accounts: accounts.length }))
+const accOf = (n) => accounts.find((a) => a.profile?.externalId === n)
+// Usernames are confirmed by you (nothing is read from X); profile 4 stays unconfirmed.
 const acc = []
-for (let i = 0; i < 3; i++) acc.push(await page.evaluate(([pid, h]) => window.relay.accounts.create({ label: `Brand ${h}`, handle: h, confirmIdentity: true, notes: '', enabled: true, profileId: pid }), [prof(i + 1).id, HANDLES[i]]))
-await page.evaluate((pid) => window.relay.accounts.create({ label: 'Unconfirmed', handle: null, confirmIdentity: false, notes: '', enabled: true, profileId: pid }), prof(4).id)
+for (let i = 0; i < 3; i++) acc.push(await page.evaluate(([id, h]) => window.relay.accounts.update(id, { label: `Brand ${h}`, handle: h, confirmIdentity: true, notes: '', enabled: true }), [accOf(i + 1).id, HANDLES[i]]))
+await page.evaluate((id) => window.relay.accounts.update(id, { label: 'Unconfirmed', handle: null, confirmIdentity: false, notes: '', enabled: true }), accOf(4).id)
 // Profile 5 disappears from IX Browser → unavailable after the next sync.
 ix.state.profiles = ix.state.profiles.slice(0, 4)
-await page.evaluate(() => window.relay.ixbrowser.sync())
+const sync2 = await page.evaluate(() => window.relay.ixbrowser.sync())
 profiles = await page.evaluate(() => window.relay.ixbrowser.profiles())
+accounts = await page.evaluate(() => window.relay.accounts.list())
+check('sync again: no duplicate accounts; the missing profile keeps its account', sync2.linked === 0 && accounts.length === 5 && accOf(5)?.profile?.availability === 'unavailable')
 const textProv = await page.evaluate((e) => window.relay.providers.create({ kind: 'openai-compatible', adapter: 'openai', name: 'Mock OpenAI', endpoint: e, model: 'gpt-test-mini', enabled: true }), `http://127.0.0.1:${ai.port}/v1`)
 await page.evaluate(({ id, k }) => window.relay.providers.setKey(id, k), { id: textProv.id, k: VALID_KEY })
 const imgProv = await page.evaluate((e) => window.relay.providers.create({ kind: 'image', adapter: 'openai-images', name: 'Mock Images', endpoint: e, model: 'gpt-image-test', enabled: true }), `http://127.0.0.1:${ai.port}/v1`)
@@ -136,10 +146,13 @@ await page.evaluate(([t, i]) => window.relay.preferences.update({ defaults: { te
 await page.evaluate(() => window.relay.publishing.updateSettings({ spacingMinutes: 0 }))
 check('setup: 5 profiles (1 unavailable), 3 confirmed accounts, 1 unconfirmed', profiles.length === 5 && profiles.filter((p) => p.availability === 'available').length === 4 && acc.every((a) => a.identity === 'confirmed'), profiles.map((p) => p.availability).join())
 
-// ── 0. Navigation: exactly two automation tabs ──
+// ── 0. Navigation: Create Post, Campaigns, Synchronized Profiles ──
 const navAutomation = await page.locator('nav').getByRole('link').allInnerTexts()
-check('navigation: Create Post and Campaign Automation are the only automation tabs', navAutomation.some((t) => t.includes('Create Post')) && navAutomation.some((t) => t.includes('Campaign Automation')) && !navAutomation.some((t) => /AI Tweet Generator|Posts & Drafts|Automation Schedule|Scheduler|Task Queue|^Automation$/.test(t.trim())), navAutomation.join(' | '))
-check('navigation: Dashboard, Accounts & Profiles, Post Links and Settings unchanged', ['Dashboard', 'Accounts & Profiles', 'Post Links', 'Settings'].every((l) => navAutomation.some((t) => t.includes(l))))
+check('navigation: Create Post, Campaigns and Synchronized Profiles', ['Create Post', 'Campaigns', 'Synchronized Profiles'].every((l) => navAutomation.some((t) => t.includes(l))) && !navAutomation.some((t) => /AI Tweet Generator|Posts & Drafts|Automation Schedule|Scheduler|Task Queue|Campaign Automation|Accounts & Profiles|^Automation$/.test(t.trim())), navAutomation.join(' | '))
+check('navigation: Dashboard, Post Links and Settings unchanged', ['Dashboard', 'Post Links', 'Settings'].every((l) => navAutomation.some((t) => t.includes(l))))
+await go('#/accounts')
+check('Synchronized Profiles: opens on the profiles, each shown as Connected or Unavailable', await waitFor(async () => (await page.locator('table[aria-label="Browser profiles"] tbody tr', { hasText: 'Connected' }).count()) === 4 && (await page.locator('table[aria-label="Browser profiles"] tbody tr', { hasText: 'Unavailable' }).count()) >= 1, 8000), (await page.locator('main').innerText().catch(() => '')).slice(0, 200))
+await snap('00-synchronized-profiles')
 
 // ── 1. Create Post: AI post (+ generated image) and Manual post → one campaign on All accounts ──
 await page.evaluate(() => { localStorage.removeItem('axora.automation.draft'); localStorage.removeItem('relay.generator.brief') })
@@ -178,13 +191,14 @@ const manualDraft = (await page.evaluate(() => window.relay.drafts.list())).find
 check('Manual: saved posts list shows both posts', await waitFor(async () => (await page.locator('ul[aria-label="Drafts"]').innerText()).includes(manualText) && (await page.locator('ul[aria-label="Drafts"]').innerText()).includes(aiText.slice(0, 20)), 8000), (await page.locator('ul[aria-label="Drafts"]').innerText().catch(() => '')).slice(0, 200))
 await page.locator('main button:has-text("Use in a campaign")').click()
 await page.waitForSelector('#camp-name')
-check('“Use in a campaign” opens Campaign Automation with the post selected', (await page.locator(`[aria-label="Use draft: ${manualText.slice(0, 100)}"]`).getAttribute('aria-checked')) === 'true' || (await page.locator(`[aria-label="Use draft: ${manualText.slice(0, 100)}"]`).isChecked()))
+check('“Use in a campaign” opens Campaigns with the post selected', (await page.locator(`[aria-label="Use draft: ${manualText.slice(0, 100)}"]`).getAttribute('aria-checked')) === 'true' || (await page.locator(`[aria-label="Use draft: ${manualText.slice(0, 100)}"]`).isChecked()))
 await page.locator(`[aria-label="Use draft: ${aiText.slice(0, 100)}"]`).click()
 await page.locator('#camp-name').fill('Keyboard tips')
 check('campaign form: Action, Profiles, Posts, Run time only', (await page.locator('main section[aria-label]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).filter((l) => ['Action', 'Profiles', 'Posts', 'Run time'].includes(l)).length === 4 && (await page.locator('#camp-interval, #camp-per-profile, [aria-label="Posting days"]').count()) === 0)
 check('action type: Post selected, Repost available', (await page.locator('[role="radio"][aria-checked="true"]:has-text("Post")').count()) === 1 && (await page.locator('[role="radio"]:has-text("Repost")').count()) === 1)
-check('campaign: All profiles by default, with counts', (await page.locator('[role="radio"][aria-checked="true"]:has-text("All profiles")').count()) === 1 && (await page.getByText('5 selected · 4 available · 1 unavailable').isVisible()))
-check('start panel: 2 posts on 3 profiles (unavailable/unconfirmed left out)', await waitFor(async () => (await summary(page).innerText()).includes('2 posts on 3 profiles') && (await summary(page).innerText()).includes('can’t be used'), 8000), (await summary(page).innerText().catch(() => '')).replace(/\n/g, ' | '))
+const profilesSection = page.locator('section[aria-label="Profiles"]')
+check('campaign: no profile selection — every eligible synchronized profile counted', await waitFor(async () => (await profilesSection.innerText()).includes('4 of 5 synchronized profiles take part'), 8000) && (await profilesSection.locator('[role="radio"], [role="checkbox"], input[type="checkbox"]').count()) === 0, (await profilesSection.innerText().catch(() => '')).replace(/\n/g, ' | '))
+check('start panel: 2 posts on 4 profiles (the unavailable one left out)', await waitFor(async () => (await summary(page).innerText()).includes('2 posts on 4 profiles') && (await summary(page).innerText()).includes('can’t be used'), 8000), (await summary(page).innerText().catch(() => '')).replace(/\n/g, ' | '))
 await snap('03-campaign')
 // A saved setup for the dashboard quick start (presets are created by older versions / IPC)
 await page.evaluate((c) => window.relay.presets.save({ name: 'Keyboard tips preset', config: c }), baseConfig({ name: 'Keyboard tips preset' }))
@@ -345,44 +359,64 @@ check('dashboard: recent notifications listed', (await panel.locator('button').f
 await snap('06-dashboard')
 await page.evaluate(() => localStorage.removeItem('axora.automation.draft'))
 await panel.locator('button:has-text("Keyboard tips preset")').click()
-check('dashboard preset quick start → Campaign Automation with the saved setup', await waitFor(async () => (await page.locator('#camp-name').inputValue()) === 'Keyboard tips preset' && (await page.evaluate(() => location.hash)).startsWith('#/campaigns'), 8000), await page.evaluate(() => location.hash))
+check('dashboard preset quick start → Campaigns with the saved setup', await waitFor(async () => (await page.locator('#camp-name').inputValue()) === 'Keyboard tips preset' && (await page.evaluate(() => location.hash)).startsWith('#/campaigns'), 8000), await page.evaluate(() => location.hash))
 
-// Select profiles (multi-select)
-await page.locator('section[aria-label="Profiles"] [role="radio"]:has-text("Select profiles")').click()
-await page.waitForTimeout(300)
-await page.locator('section[aria-label="Profiles"]').getByRole('button', { name: 'Select all', exact: true }).click()
-check('select profiles: Select all → counts', await page.getByText('5 selected · 4 available · 1 unavailable').isVisible())
-await page.locator('section[aria-label="Profiles"]').getByRole('button', { name: 'Deselect all', exact: true }).click()
-await page.locator(`[aria-label="Select ${prof(2).name}"]`).click()
-check('… one picked → the campaign uses only that profile', await waitFor(async () => (await page.getByText('1 selected · 1 available · 0 unavailable').isVisible()) && /on 1 profile/.test(await summary(page).innerText()), 6000), (await summary(page).innerText()).replace(/\n/g, ' | '))
-await snap('07-selected')
+check('campaign page: no profile or account selection anywhere', (await page.locator('main [aria-label^="Select "], main [role="radio"]:has-text("Select profiles"), main [role="radio"]:has-text("All profiles")').count()) === 0)
 
-// ── 9. Create Post → Publish now: All accounts / Select accounts, validation, live progress ──
-const manual = await page.evaluate((a) => window.relay.drafts.save({ body: 'Written by hand, posted from two accounts', accountId: a, status: 'ready' }), acc[0].id)
+// ── 9. Create Post: comment section, then Publish from every profile (no account selection) ──
 await go('#/dashboard')
-await go(`#/create?draft=${manual.id}`)
-await page.locator('main button:has-text("Publish now…")').click()
+await go('#/create')
+await page.waitForSelector('main textarea[aria-label="Post text"]')
+check('Create Post: no account selector in the editor', (await page.locator('main [aria-label="Account"]').count()) === 0)
+const manualBody = 'Written by hand, posted from every profile'
+const commentBody = 'Comment: the notes are at https://example.com/notes'
+await page.locator('main textarea[aria-label="Post text"]').fill(manualBody)
+check('Create Post: comment section below the post, off by default', (await page.locator('main section[aria-label="Comment"]').count()) === 1 && (await page.locator('main textarea[aria-label="Comment text"]').count()) === 0)
+await page.locator('main [role="switch"][aria-label="Post a comment under this post"]').click()
+await page.locator('main textarea[aria-label="Comment text"]').fill(commentBody)
+check('Create Post: the preview shows the comment as a reply, apart from the post', await waitFor(async () => /comment \(reply\)/i.test(await page.locator('main').innerText()), 4000))
+await page.keyboard.press('Control+s')
+check('post saved with its comment and no account', await waitFor(async () => (await page.evaluate(() => window.relay.drafts.list())).some((d) => d.body === manualBody && d.comment.enabled && d.comment.text === commentBody && d.accountId === null), 8000))
+const manual = (await page.evaluate(() => window.relay.drafts.list())).find((d) => d.body === manualBody)
+await snap('09-create-comment')
+await page.locator('main button:has-text("Publish…")').click()
 const pd = page.locator('[role="dialog"]').last()
 await pd.waitFor()
-await pd.locator('[role="radio"]:has-text("All accounts")').click()
-check('publish: All accounts covers every account that can publish', await waitFor(async () => (await pd.innerText()).includes('4 of 4 accounts selected · 4 can publish'), 5000), (await pd.innerText()).replace(/\n/g, ' | ').slice(0, 300))
-await pd.locator('[role="radio"]:has-text("Select accounts")').click()
-for (const box of await pd.locator('[aria-label^="Publish from "]').all()) if (await box.isChecked()) await box.click()
-await page.waitForTimeout(300)
-check('publish: no account selected → blocked with a clear message', (await pd.getByText('Choose at least one account.').isVisible()) && (await pd.locator('button:has-text("Publish now")').last().isDisabled()))
-await pd.locator('[aria-label="Publish from Brand relay_a"]').click()
-await pd.locator('[aria-label="Publish from Brand relay_b"]').click()
-await page.waitForTimeout(500)
-check('publish: same text on several accounts must be allowed explicitly', await pd.locator('button:has-text("Publish to 2 accounts")').isDisabled())
+check('publish: every eligible synchronized profile, nothing to select', await waitFor(async () => (await pd.innerText()).includes('4 of 5 synchronized profiles will post'), 8000) && (await pd.locator('[role="checkbox"], [aria-label^="Publish from "]').count()) === 0, (await pd.innerText()).replace(/\n/g, ' | ').slice(0, 300))
+check('publish: the unconfirmed username is a warning, not a block', (await pd.innerText()).includes('no confirmed X username'))
+check('publish: same text on several accounts must be allowed explicitly', await pd.locator('button:has-text("Publish on 4 profiles")').isDisabled())
 await pd.locator('[role="switch"][aria-label="Post the same text from several accounts"]').click()
-await snap('09-publish-dialog')
+await snap('10-publish-dialog')
 const postsBefore9 = (await fxPosts()).length
-await pd.locator('button:has-text("Publish to 2 accounts")').click()
-check('… “Sent to the queue for 2 accounts”', await toastShown('Sent to the queue for 2 accounts'))
-check('… live progress shows each account published', await waitFor(async () => (await pd.locator('ul[aria-label="Publishing progress"] li', { hasText: 'Published' }).count()) === 2, 120000), await pd.innerText().catch(() => ''))
-check('… published once from each account, text unchanged', (await fxPosts()).slice(postsBefore9).length === 2 && (await fxPosts()).slice(postsBefore9).every((p) => p.text === 'Written by hand, posted from two accounts') && new Set((await fxPosts()).slice(postsBefore9).map((p) => p.handle)).size === 2, JSON.stringify((await fxPosts()).slice(postsBefore9)))
-await snap('10-publish-progress')
+await pd.locator('button:has-text("Publish on 4 profiles")').click()
+check('… “Sent to the queue for 4 profiles”', await toastShown('Sent to the queue for 4 profiles'))
+check('… live progress: each profile published, then its comment posted', await waitFor(async () => (await pd.locator('ul[aria-label="Publishing progress"] li', { hasText: 'Published' }).count()) === 4 && (await pd.locator('ul[aria-label="Publishing progress"] li', { hasText: 'Posted' }).count()) === 4, 180000), await pd.innerText().catch(() => ''))
+const posts9 = (await fxPosts()).slice(postsBefore9)
+const posted9 = posts9.filter((p) => !p.inReplyTo)
+const replies9 = posts9.filter((p) => p.inReplyTo)
+check('… one post from each of the 4 profiles, text unchanged', posted9.length === 4 && posted9.every((p) => p.text === manualBody) && new Set(posted9.map((p) => p.handle)).size === 4, JSON.stringify(posts9.map((p) => [p.handle, p.inReplyTo])))
+check('… each comment is a reply from the same account to its own post', replies9.length === 4 && replies9.every((r) => r.text.trim() === commentBody && posted9.some((p) => p.id === r.inReplyTo && p.handle === r.handle)), JSON.stringify(replies9.map((r) => [r.handle, r.inReplyTo])))
+await snap('11-publish-progress')
 await pd.locator('button:has-text("Close")').last().click()
+
+// Schedule from Create Post: a date and time, every profile, nothing published early.
+const later = await page.evaluate(() => window.relay.drafts.save({ body: 'Scheduled from Create Post', accountId: null, status: 'ready' }))
+await go('#/dashboard')
+await go(`#/create?draft=${later.id}`)
+await page.locator('main button:has-text("Publish…")').click()
+const sd = page.locator('[role="dialog"]').last()
+await sd.waitFor()
+await sd.locator('[role="radio"]:has-text("Schedule")').click()
+await sd.getByRole('button', { name: 'Tomorrow, 09:00' }).click()
+await sd.locator('[role="switch"][aria-label="Post the same text from several accounts"]').click()
+const postsBeforeSched = (await fxPosts()).length
+await sd.locator('button:has-text("Schedule on 4 profiles")').click()
+check('schedule: “Scheduled on 4 profiles”', await toastShown('Scheduled on 4 profiles'))
+const laterSchedules = (await page.evaluate(() => window.relay.publishing.list({ view: 'upcoming' }))).filter((e) => e.draft?.preview?.startsWith('Scheduled from Create Post'))
+check('… four schedules for tomorrow 09:00 (this computer’s time), nothing published yet', laterSchedules.length === 4 && laterSchedules.every((e) => { const t = new Date(e.schedule.runAt); return t.getHours() === 9 && t.getMinutes() === 0 && t.getTime() > Date.now() }) && (await fxPosts()).length === postsBeforeSched, JSON.stringify(laterSchedules.map((e) => e.schedule.runAt)))
+await sd.locator('button:has-text("Close")').last().click()
+for (const e of laterSchedules) await page.evaluate((id) => window.relay.publishing.unschedule(id), e.schedule.id)
+check('… cancelled schedules return the post to the editor with nothing unsaved', await waitFor(async () => (await page.evaluate((id) => window.relay.drafts.list().then((ds) => ds.find((d) => d.id === id)?.status), later.id)) === 'ready', 8000) && (await waitFor(async () => (await page.locator('main section[aria-label="Edit draft"] header').innerText()).includes('Saved'), 5000)) && (await page.locator('main').getByText('Unsaved changes').count()) === 0)
 
 // ── 10. Post campaign with a run time; then stop ──
 const sched = []
@@ -393,20 +427,18 @@ await go('#/campaigns')
 await page.waitForSelector('#camp-name')
 await page.locator('#camp-name').fill('Tomorrow morning')
 for (const d of sched) await page.locator(`[aria-label="Use draft: ${d.body.slice(0, 100)}"]`).click()
-await page.locator('section[aria-label="Profiles"] [role="radio"]:has-text("Select profiles")').click()
-await page.locator(`[aria-label="Select ${prof(3).name}"]`).click()
 await page.locator('section[aria-label="Run time"] [role="radio"]:has-text("At a date and time")').click()
 const tomorrow = new Date(Date.now() + 86_400_000)
 const p2 = (n) => String(n).padStart(2, '0')
 await page.locator('#camp-start').fill(`${tomorrow.getFullYear()}-${p2(tomorrow.getMonth() + 1)}-${p2(tomorrow.getDate())}T10:00`)
-check('run time: start panel shows 2 posts on 1 profile from tomorrow 10:00', await waitFor(async () => (await summary(page).innerText()).includes('2 posts on 1 profile') && (await summary(page).innerText()).includes('10:00'), 8000), (await summary(page).innerText()).replace(/\n/g, ' | '))
+check('run time: start panel shows 2 posts on 4 profiles from tomorrow 10:00', await waitFor(async () => (await summary(page).innerText()).includes('2 posts on 4 profiles') && (await summary(page).innerText()).includes('10:00'), 8000), (await summary(page).innerText()).replace(/\n/g, ' | '))
 await snap('11-scheduled-campaign')
 await page.locator('aside[aria-label="Start"] button:has-text("Start campaign")').click()
 const run10 = await waitFor(async () => (await page.evaluate(() => window.relay.runs.list()))[0]?.name === 'Tomorrow morning', 10000) ? (await page.evaluate(() => window.relay.runs.list()))[0] : null
 check('… both posts wait for the run time (nothing published yet)', run10 !== null && (await waitFor(async () => (await details(run10.id)).items.length === 2 && (await details(run10.id)).items.every((i) => i.scheduleStatus === 'pending'), 20000)), run10 && JSON.stringify((await details(run10.id)).items.map((i) => [i.scheduleStatus, i.runAt])))
 if (run10) {
   const times = (await details(run10.id)).items.map((i) => new Date(i.runAt))
-  check('… at tomorrow 10:00 on the selected profile', times.every((t) => t.getDate() === tomorrow.getDate() && t.getHours() === 10 && t.getMinutes() === 0) && (await details(run10.id)).items.every((i) => i.profileId === prof(3).id))
+  check('… at tomorrow 10:00, shared out over the synchronized profiles', times.every((t) => t.getDate() === tomorrow.getDate() && t.getHours() === 10 && t.getMinutes() === 0) && new Set((await details(run10.id)).items.map((i) => i.profileId)).size === 2)
   check('… status shows Running with the profile results', (await runPanel().getByText('Running').first().isVisible()) && (await runPanel().locator('ul[aria-label="Results per profile"] li').count()) === 2)
   await runPanel().locator('button:has-text("Stop")').click()
   await page.locator('[role="dialog"] button:has-text("Stop")').last().click()
@@ -423,7 +455,6 @@ await go('#/campaigns')
 await page.waitForSelector('#camp-name')
 await page.locator('#camp-name').fill('Repost campaign')
 await page.locator('section[aria-label="Action"] [role="radio"]:has-text("Repost")').click()
-await page.locator('section[aria-label="Profiles"] [role="radio"]:has-text("All profiles")').click()
 await page.locator('section[aria-label="Run time"] [role="radio"]:has-text("Now")').click()
 check('repost: the post-link library is offered instead of saved posts', await waitFor(async () => (await page.locator('ul[aria-label="Post links"]').count()) === 1, 5000) && (await page.locator('ul[aria-label="Your drafts"]').count()) === 0)
 await page.locator('[aria-label="Choose https://x.com/someone_else/status/1999000000000000001"]').click()
@@ -470,8 +501,8 @@ check('no recurring schedules, scheduling dashboard or posting-queue table on th
 const hashAfter = async (h) => { await go(h); await page.waitForTimeout(300); return page.evaluate(() => location.hash) }
 check('old address /posts?draft= → Create Post with that post', (await hashAfter(`#/posts?draft=${manual.id}`)) === `#/create?draft=${manual.id}`)
 check('old address /generator → Create Post (AI)', (await hashAfter('#/generator')) === '#/create?mode=ai')
-check('old address /automation?run= → Campaign Automation with that campaign', (await hashAfter(`#/automation?run=${run1.id}`)) === `#/campaigns?run=${run1.id}`)
-check('old addresses /queue, /scheduler, /automation-schedule → Campaign Automation', (await hashAfter('#/queue?view=attention')).startsWith('#/campaigns?') && (await hashAfter('#/scheduler')).startsWith('#/campaigns') && (await hashAfter('#/automation-schedule')) === '#/campaigns')
+check('old address /automation?run= → Campaigns with that campaign', (await hashAfter(`#/automation?run=${run1.id}`)) === `#/campaigns?run=${run1.id}`)
+check('old addresses /queue, /scheduler, /automation-schedule → Campaigns', (await hashAfter('#/queue?view=attention')).startsWith('#/campaigns?') && (await hashAfter('#/scheduler')).startsWith('#/campaigns') && (await hashAfter('#/automation-schedule')) === '#/campaigns')
 
 // Notifications contain no codes or technical details
 await page.locator('button[aria-label^="Notifications"]').click()

@@ -133,6 +133,28 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(error["code"], "MEDIA_MISSING")
         self.assertEqual(self.posts(), [])
 
+    def test_comment_replies_once_to_the_given_post(self):
+        post = self.publish(expectedHandle="relay_test")["result"]
+        self.engine.progress.clear()
+        reply = self.publish(text="More details in the thread", inReplyTo=post["postId"], expectedHandle="relay_test")
+        self.assertTrue(reply["ok"], reply)
+        posts = self.posts()
+        self.assertEqual(len(posts), 2)
+        self.assertIsNone(posts[0]["inReplyTo"], "the post itself is not a reply")
+        self.assertEqual(posts[1]["inReplyTo"], post["postId"], "the comment answers exactly that post")
+        self.assertEqual(posts[1]["text"].strip(), "More details in the thread")
+        self.assertEqual(reply["result"]["inReplyTo"], post["postId"])
+        self.assertEqual(reply["result"]["postId"], posts[1]["id"])
+        self.assertEqual([p["stage"] for p in self.engine.progress], ["attach", "open-composer", "write", "submit", "confirm"])
+
+    def test_comment_keeps_every_safety_check(self):
+        self.assertEqual(self.publish(text="A comment", inReplyTo="1900000000000000001", expectedHandle="someone_else")["error"]["code"], "ACCOUNT_MISMATCH")
+        self.fixture.set("silent")
+        error = self.publish(text="A comment", inReplyTo="1900000000000000001", confirmTimeoutMs=5000)["error"]
+        self.assertEqual(error["code"], "OUTCOME_UNKNOWN")
+        self.assertTrue(error["submitted"])
+        self.assertEqual(len(self.posts()), 1, "clicked exactly once")
+
 
 @unittest.skipUnless(ENDPOINT, "AXORA_TEST_CDP_ENDPOINT not set (no real browser to attach to)")
 class FindPostTests(unittest.TestCase):
@@ -158,8 +180,8 @@ class FindPostTests(unittest.TestCase):
         reply = self.engine.call("x.publish", {"endpoint": ENDPOINT, "text": TEXT, "baseUrl": self.fixture.base_url, "confirmTimeoutMs": 5000})
         self.assertEqual(reply["error"]["code"], "OUTCOME_UNKNOWN")
 
-    def find(self, text=TEXT, handle="relay_test"):
-        return self.engine.call("x.findPost", {"endpoint": ENDPOINT, "handle": handle, "text": text, "baseUrl": self.fixture.base_url})
+    def find(self, text=TEXT, handle="relay_test", **extra):
+        return self.engine.call("x.findPost", {"endpoint": ENDPOINT, "handle": handle, "text": text, "baseUrl": self.fixture.base_url, **extra})
 
     def test_finds_a_post_that_went_out(self):
         self.submit_unconfirmed("silent")
@@ -179,9 +201,19 @@ class FindPostTests(unittest.TestCase):
         self.fixture.set("signed-out")
         self.assertEqual(self.find()["error"]["code"], "SESSION_EXPIRED")
 
+    def test_finds_an_unconfirmed_comment_among_replies_only(self):
+        self.fixture.set("silent")
+        reply = self.engine.call("x.publish", {"endpoint": ENDPOINT, "text": "An unconfirmed comment", "inReplyTo": "1900000000000000001", "baseUrl": self.fixture.base_url, "confirmTimeoutMs": 5000})
+        self.assertEqual(reply["error"]["code"], "OUTCOME_UNKNOWN")
+        self.assertFalse(self.find(text="An unconfirmed comment")["result"]["found"], "replies are not on the posts tab")
+        found = self.find(text="An unconfirmed comment", replies=True)["result"]
+        self.assertTrue(found["found"])
+        self.assertEqual(found["postId"], self.fixture.posts[0]["id"])
+
     def test_validation(self):
         self.assertEqual(self.find(handle="not valid")["error"]["code"], "INVALID_PARAMS")
         self.assertEqual(self.find(text="")["error"]["code"], "INVALID_PARAMS")
+        self.assertEqual(self.find(replies="yes")["error"]["code"], "INVALID_PARAMS")
 
 
 @unittest.skipUnless(ENDPOINT, "AXORA_TEST_CDP_ENDPOINT not set (no real browser to attach to)")
@@ -243,6 +275,9 @@ class PublishParamTests(unittest.TestCase):
         self.assertEqual(call(text="hi", media=["relative.png"]), "INVALID_PARAMS")
         self.assertEqual(call(text="hi", media=["/tmp/a.exe"]), "INVALID_PARAMS")
         self.assertEqual(call(text="hi", expectedHandle="not a handle"), "INVALID_PARAMS")
+        self.assertEqual(call(text="hi", inReplyTo="not-an-id"), "INVALID_PARAMS")
+        self.assertEqual(call(text="hi", inReplyTo=123), "INVALID_PARAMS")
+        self.assertEqual(call(text="   ", inReplyTo="123"), "INVALID_PARAMS")
         self.assertEqual(self.engine.call("x.publish", {"endpoint": "http://10.0.0.1:9222", "text": "hi"})["error"]["code"], "ENDPOINT_NOT_ALLOWED")
 
 

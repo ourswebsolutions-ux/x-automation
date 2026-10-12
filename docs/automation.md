@@ -1,105 +1,165 @@
 # Creating posts and running campaigns
 
-Automation lives in two tabs:
+The sidebar's automation group has three pages:
 
-- **Create Post** for writing posts.
-- **Campaign Automation** for posting them on a schedule.
+- **Create Post** for writing posts (and their comments), then publishing or scheduling them.
+- **Campaigns** for posting saved posts from every profile, now or at a date and time.
+- **Synchronized Profiles** for syncing IX Browser profiles and seeing which ones can post.
 
-Dashboard, Accounts & Profiles, Post Links and Settings are separate and unchanged.
+Dashboard, Post Links and Settings are unchanged.
+
+## Synchronized Profiles
+
+**Sync profiles** fetches every profile from IX Browser's Local API and links each available profile
+to an account automatically. There is no "select profiles → link accounts" step any more.
+
+- **The first sync** creates one account record per profile, labelled with the profile name. The X
+  username stays unknown: a profile name is not an X identity.
+- **Later syncs** never create duplicates. A profile keeps its local id, and its link to its account
+  (and the IX Browser profile id) as long as IX Browser reports it. Two syncs at once join into one.
+- **A profile that can't be linked** is listed in the sync history with the reason. The next sync
+  retries it. The other profiles are not affected.
+- **A profile IX Browser stops reporting** becomes *Unavailable*. It keeps its account and comes
+  back with the same account when it is reported again.
+
+The **Posting** column shows each profile's status:
+
+| Status | Meaning |
+| --- | --- |
+| Connected | Linked to an enabled account. Create Post and Campaigns use it. |
+| Disabled | Its account is disabled for tasks (X accounts tab), so it is left out. |
+| Disconnected | You disconnected it. Syncs leave it out until you press **Connect**, which links the same account again, keeping its username and history. |
+| Link failed | The last sync couldn't link it; the reason is shown. Sync again to retry. |
+| Unavailable | IX Browser no longer reports it. |
+
+**Removing an account** (X accounts tab) also counts as disconnecting its profile.
+
+**Confirming X usernames** (X accounts tab) is optional but recommended:
+
+- For an account with a confirmed username, the engine checks which account is signed in to the
+  profile before posting, and refuses to post from a different one.
+- Without a confirmed username, the post goes out from whoever is signed in to that profile. The
+  publish dialog and the campaign form show this as a warning.
 
 ## Create Post
 
-Create Post is one page with an **AI Post / Manual Post** toggle. Saved posts are listed on the left.
+Create Post is one page with an **AI Post / Manual Post** toggle. Saved posts are listed on the left;
+together they are the content you can publish now or use in campaigns.
 
 | | |
 | --- | --- |
 | **AI Post** | Describe the topic, main message, audience, tone and length, choose the AI provider and model, and generate variations. **Use this post** opens one in the editor (**Save for later** keeps it without opening). Facts in the brief are the only facts the AI may use. |
 | **Manual Post** | Type the post yourself. No AI provider is needed. |
 
-**The editor** is the same for both modes:
+**The editor** is the same for both modes. There is no account to choose.
 
-- text, hashtags and the X length meter;
-- images: **Upload**, **Library**, or **Generate** with the image provider;
-- AI editing tools (optional) and a preview;
-- **Save**.
+- **Post:** text, hashtags and the X length meter; images (**Upload**, **Library**, or **Generate**
+  with the image provider); AI editing tools (optional).
+- **Comment** (below the post, off by default): turn it on and write the comment. Once X confirms the
+  post, each account that published it replies to its own post with this comment.
+  - It is saved with the post and copied with it, including into the copy each profile gets.
+  - A comment that is on must not be empty. Over 280 characters is a warning, because only X Premium
+    accounts can post it.
+  - The preview shows the comment as a reply under the post.
+- **Save**. **Save** and **Publish…** turn into a single click while they run, so a post can't be
+  submitted twice.
 
-**For a saved post:**
+**Publish…** (on a saved post):
 
-- **Publish now…** asks for **All accounts** or **Select accounts**.
-  - All accounts means every account linked to an available IX Browser profile.
-  - Every chosen account is checked first, and at least one account is required.
-  - Posting the same text from several accounts has to be allowed with an explicit switch. Each
-    account gets its own copy of the post.
-  - After sending, the dialog follows each account live: waiting, publishing, published (with
-    **View on X**), failed, or needs review.
-- **Use in a campaign** opens Campaign Automation with the post already selected.
+- **Publish now** or **Schedule** (date and time on this computer, with quick picks). The time is
+  stored in UTC.
+- **Who posts:** every synchronized profile that can post, meaning an enabled account on a profile
+  IX Browser still reports. The dialog shows *N of M synchronized profiles will post*, names them, and
+  lists any left out with the reason. With no usable profile it asks you to sync first, with a
+  **Sync profiles** button.
+- **Same text from several accounts:** allowed only with the explicit switch, because X can treat it
+  as repeated or coordinated content. Each profile gets its own copy of the post and of its comment.
+- **After sending**, the dialog follows each profile: waiting, publishing, published (with
+  **View on X**), failed, or needs review. Below each post it shows the comment's progress (waiting,
+  posting, posted, failed). A scheduled post shows *Scheduled* and goes out at its time while X Auto
+  is running.
+
+**Use in a campaign** opens Campaigns with the post already selected.
 
 A post that is already scheduled, published or failed shows its status strip in the editor, with
-actions such as changing the time, publishing now, cancelling or returning it to drafts. Posts
-scheduled before this layout existed stay manageable there.
+actions such as **Change time**, **Publish now**, **Cancel schedule** or **Edit again**.
 
-## Campaign Automation
+## Campaigns
 
-The campaign form has four choices and one button.
+The campaign form has three choices and one button. Profiles are never chosen.
 
 1. **Action:**
-   - **Post** publishes your saved posts.
+   - **Post** publishes your saved posts. A post that carries a comment is followed by that comment,
+     as a reply from the same account.
    - **Repost** and **Comment** plan tasks: X Auto opens the post in the profile for you, and you
-     repost it or post the comment. Neither is automated.
-   - A comment is the text you write, so it is approved by you.
-   - Only one of your accounts gets each post. The same comment is never planned from two of your
-     accounts, or twice from one, because that is coordinated engagement.
-2. **Profiles:** **All profiles** or **Select profiles** (search, Select all / Deselect all), with
-   live counts. The signed-in X account is always checked before posting; unavailable profiles and
-   accounts without a confirmed username are left out.
+     repost it or post the comment. Neither is automated. These act on other people's posts from
+     Post Links, so only one of your accounts gets each post, and the same comment is never planned
+     from two of your accounts (coordinated engagement).
+2. **Profiles** (information only): *N of M synchronized profiles take part*, plus how many are
+   unavailable or disabled, with **View profiles** and **Sync profiles**.
+   - Which profiles take part is decided by the main process when you press Start.
+   - With none synchronized, the form says so and Start is blocked.
 3. **Posts:**
-   - For Post, choose saved posts (AI or manual, from Create Post). They are shared out, one profile
-     each, unless you turn on **Post each one from every selected profile** (repeated content, which
-     X can limit).
-   - For Repost or Comment, choose posts from the Post Links library. For Comment, also write the
-     comment.
-   - The number of available saved posts and post links is shown.
-4. **Run time:** **Now**, or **at a date and time**. For reposts and comments, the run time becomes
-   the task's due time.
+   - For Post, choose saved posts (AI or manual). They are shared out, one profile each, unless you
+     turn on **Post each one from every profile** (repeated content, which X can limit). Posts with a
+     comment show a comment icon, and the form says how many comments will follow.
+   - For Repost or Comment, choose posts from Post Links. For Comment, also write the comment.
+4. **Run time:** **Now**, or **at a date and time**, including tomorrow or any later date, in this
+   computer's time zone. The time is stored in UTC. For reposts and comments it becomes the task's due
+   time.
 
-**Start campaign** starts it in one click. Blocking problems (no posts, no usable profile, a time in
-the past) are shown above the button.
+**Start campaign** starts it in one click. Blocking problems are shown above the button, for example:
 
-**While it runs**, the campaign shows **Running**, **Completed** or **Failed**, a progress bar, and
-the result for each profile and action: published (with **View on X**), failed, or waiting; for
-reposts and comments, whether you've done or skipped the task yet. **Stop** cancels posts that haven't started; they go back to your posts.
+- no posts;
+- a post that is already scheduled or published;
+- no usable profile;
+- a time in the past.
+
+**While it runs**, the campaign shows **Running**, **Completed** or **Failed** and a progress bar.
+
+- **Each operation** records:
+  - the account and profile;
+  - the post;
+  - its time;
+  - the result: published (with **View on X**), failed with the reason, needs review, or waiting.
+- **Comments** have their own line under each post: waiting, posting, posted (with **View comment**),
+  failed, or needs review.
+- **Completion:** a campaign is *Completed* only once every post and every comment has an outcome.
+- **Stop** cancels the posts and comments that haven't started. The posts go back to your saved posts.
 
 **Further down the page:**
 
-- **Needs your attention:** posts X didn't confirm (check whether they went out, never retried
-  blindly), failed posts with **Retry**, and **Resume publishing** if publishing was paused.
+- **Needs your attention:** posts and comments X didn't confirm (check whether they went out; never
+  retried blindly), failed ones with **Retry**, and **Resume publishing** if publishing was paused.
 - **Recent campaigns:** open one to see its results.
 
-**Removed:** saved setups, end dates and durations, posting days and hours, intervals and limits,
-approval mode, recurring schedules, the scheduled-posts overview and the posting-queue table.
-
-- **Recurring schedules** made with an earlier version are kept in the database but no longer start
-  runs.
-- **Saved setups:** a dashboard quick-start link still opens Campaign Automation with that setup's
-  profiles and run time.
-
-## How it works underneath (unchanged)
+## How it works underneath
 
 **Publishing:**
 
-- Campaigns run on the existing automation runs and publishing queue (one post at a time per profile; spacing from Settings → Automation).
+- Campaigns and Create Post use the existing automation runs, scheduled posts and the persistent task
+  queue: one post at a time per profile, with spacing from Settings → Automation. No second
+  scheduling system exists.
+- A scheduled post or campaign goes out while X Auto is running, even with its window closed. A time
+  that passed while the app was closed is published late only within the *late posts* window;
+  older ones wait for you (see [publishing.md](publishing.md)).
 - IX Browser opens a profile only when its post is due, and closes it afterwards. The engine checks
-  the signed-in account, posts, and confirms the post link.
-- If X shows no confirmation, the engine looks for the post on the profile before asking you; it
-  never retries blindly (see [publishing.md](publishing.md)).
-- Posts only go out while X Auto is running.
+  the signed-in account (when the username is confirmed), posts, and confirms the post link.
+- **A comment** is a `reply` task, queued in the same transaction that records the confirmed post.
+  - The idempotency key is `reply:<publish task id>`, so there is one reply per post, even after
+    restarts or retries.
+  - It carries the parent post's id from X's confirmed link.
+  - It uses the same profile and the same checks, and X's documented post web intent
+    (`/intent/post?in_reply_to=<id>`).
+  - It is never posted for a post that failed or wasn't confirmed, and never to anyone else's post.
 
-**Data:**
+**Data** (migration `013`):
 
-- Nothing was deleted by the consolidation. Drafts, accounts, campaigns (runs), saved setups
-  (presets), recurring campaigns and schedules are all kept.
-- Migration `012` added posting days to the campaign schedule (default: every day), the recurring
-  schedules table, and the link from a campaign post to the saved post it came from.
+- `drafts.comment_text` and `comment_enabled` hold the comment.
+- `browser_profiles.link_excluded_at` and `disconnected_account_id` record a disconnect.
+- `profile_sync_runs.linked`, `link_failed` and `link_errors` record what automatic linking did.
+
+Nothing existing was removed or rewritten.
 
 **Old addresses still work** (bookmarks, notifications):
 
@@ -107,19 +167,23 @@ approval mode, recurring schedules, the scheduled-posts overview and the posting
 | --- | --- |
 | `/posts` | Create Post |
 | `/generator` | Create Post in AI mode |
-| `/automation` | Campaign Automation |
-| `/automation-schedule` | Campaign Automation |
-| `/scheduler` | Campaign Automation, at Scheduled posts |
-| `/queue` | Campaign Automation, at the Posting queue |
+| `/automation` | Campaigns |
+| `/automation-schedule` | Campaigns |
+| `/scheduler` | Campaigns, at Scheduled posts |
+| `/queue` | Campaigns, at the Posting queue |
+| `/accounts` | Synchronized Profiles (profiles first; `?view=accounts` for the X accounts tab) |
 
 ## Verification status
 
-- **Verified end to end:**
-  - The real app, the bundled Python engine and real Chrome, with three Chromes as three profiles'
-    browsers.
-  - A local stand-in for X's composer and profile pages.
-  - IX Browser's Local API and OpenAI as contract mocks.
+- **Verified:**
+  - Unit suites with the real services and database, the IX Browser contract mock and a scripted
+    engine (`tests/unit/autolink.test.ts`): automatic linking, duplicates, disconnect/reconnect,
+    missing profiles, link failures and retry, publishing without account selection, comments,
+    scheduling, campaigns, failures and review.
+  - Engine tests in real Chrome against the local X stand-in, including the reply composer and finding
+    an unconfirmed reply.
 - **Not verified:**
   - A real IX Browser installation.
-  - Publishing on x.com. X's web selectors are undocumented and can change.
+  - Publishing or replying on x.com. X's web selectors and the intent page are not a documented
+    automation interface and can change.
   - A clean Windows install.

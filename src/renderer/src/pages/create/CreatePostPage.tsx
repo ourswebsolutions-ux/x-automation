@@ -37,8 +37,12 @@ import { AssetLibraryDialog } from '@/components/feature/AssetLibraryDialog'
 type StatusFilter = 'all' | DraftStatus
 type Sort = 'updated-desc' | 'updated-asc' | 'created-desc' | 'created-asc'
 
-/** Editor state → save payload: attachments are sent as ordered asset ids with descriptions. */
-const toInput = ({ media, ...value }: EditorValue) => ({ ...value, attachments: media.map((m) => ({ assetId: m.id, altText: m.altText })) })
+/**
+ * Editor state → save payload: attachments are sent as ordered asset ids with descriptions. There is
+ * no account to choose (posts go out from every synchronized profile); a draft keeps the account it
+ * was last scheduled from, which only publishing sets.
+ */
+const toInput = ({ media, ...value }: EditorValue, accountId: string | null = null) => ({ ...value, accountId, attachments: media.map((m) => ({ assetId: m.id, altText: m.altText })) })
 
 const STATUS_LABEL: Record<DraftStatus, string> = { draft: 'Draft', ready: 'Ready', scheduled: 'Scheduled', published: 'Published', failed: 'Failed' }
 
@@ -118,7 +122,7 @@ export function CreatePostPage() {
   const save = async (value: EditorValue) => {
     setSaving(true)
     try {
-      const saved = await relay.drafts.save({ id: selected?.id, ...toInput(value) })
+      const saved = await relay.drafts.save({ id: selected?.id, ...toInput(value, selected?.accountId ?? null) })
       upsertLocal(saved)
       setDirty(false)
       toast({ tone: 'success', title: selected ? 'Draft saved' : 'Draft created' })
@@ -291,7 +295,6 @@ export function CreatePostPage() {
           <DraftEditor
             key={selected?.id ?? 'new'}
             draft={selected}
-            accounts={accounts.data ?? []}
             saving={saving}
             onSave={save}
             onSaveAsNew={saveAsNew}

@@ -1,4 +1,4 @@
-import { ImageIcon } from 'lucide-react'
+import { ImageIcon, MessageSquareReply } from 'lucide-react'
 import { useState } from 'react'
 import type { Id } from '@shared/types/domain'
 import { Button, Checkbox, SearchField } from '@/components/ui'
@@ -30,7 +30,7 @@ export function DraftPicker({ value, onChange }: Props) {
         </Button>
       </div>
       {usable.length === 0 ? (
-        <p className="px-3 pb-3 text-xs text-fg-subtle">You have no unscheduled drafts. Write some in Posts &amp; Drafts first.</p>
+        <p className="px-3 pb-3 text-xs text-fg-subtle">You have no unscheduled posts. Write some in Create Post first.</p>
       ) : (
         <ul className="max-h-64 overflow-y-auto" aria-label="Your drafts">
           {shown.map((d) => {
@@ -40,6 +40,7 @@ export function DraftPicker({ value, onChange }: Props) {
                 <Checkbox checked={order >= 0} onChange={(on) => toggle(d.id, on)} aria-label={`Use draft: ${d.body.slice(0, 100)}`} />
                 <span className="line-clamp-2 min-w-0 flex-1 text-sm text-fg">{d.body || <span className="text-fg-faint">Image only</span>}</span>
                 {d.media.length > 0 && <ImageIcon size={13} className="mt-1 shrink-0 text-fg-subtle" aria-label="Has an image" />}
+                {d.comment.enabled && d.comment.text.trim() && <MessageSquareReply size={13} className="mt-1 shrink-0 text-fg-subtle" aria-label="Has a comment" />}
                 {order >= 0 && <span className="tabular w-6 shrink-0 text-right text-xs text-accent-text">{order + 1}</span>}
               </li>
             )

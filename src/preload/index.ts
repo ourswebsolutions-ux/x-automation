@@ -113,6 +113,7 @@ const api: RelayApi = {
     setEnabled: (ids, enabled) => invoke(IpcChannel.AccountsSetEnabled, { ids, enabled }),
     remove: (ids) => invoke(IpcChannel.AccountsRemove, ids),
     createFromProfiles: (profileIds) => invoke(IpcChannel.AccountsCreateFromProfiles, profileIds),
+    connectProfile: (profileId) => invoke(IpcChannel.AccountsConnectProfile, profileId),
     openProfile: (id) => invoke(IpcChannel.AccountsOpenProfile, id),
     closeProfile: (id) => invoke(IpcChannel.AccountsCloseProfile, id),
     onChange: (listener) => subscribe(IpcEvent.AccountsChanged, () => listener())
@@ -173,6 +174,9 @@ const api: RelayApi = {
     schedule: (input) => invoke(IpcChannel.PublishingSchedule, input),
     publishNow: (input) => invoke(IpcChannel.PublishingPublishNow, input),
     scheduleMany: (input) => invoke(IpcChannel.PublishingScheduleMany, input),
+    targets: () => invoke(IpcChannel.PublishingTargets),
+    checkAll: (draftId, runAt) => invoke(IpcChannel.PublishingCheckAll, { draftId, ...(runAt ? { runAt } : {}) }),
+    publishAll: (input) => invoke(IpcChannel.PublishingPublishAll, input),
     reschedule: (id, runAt) => invoke(IpcChannel.PublishingReschedule, { id, runAt }),
     unschedule: (id) => invoke(IpcChannel.PublishingUnschedule, id),
     returnToDrafts: (draftId) => invoke(IpcChannel.PublishingReturnToDrafts, draftId),

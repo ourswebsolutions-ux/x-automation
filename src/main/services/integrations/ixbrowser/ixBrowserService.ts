@@ -34,6 +34,12 @@ export type ProfileEvent =
   | { profileId: string; externalId: number; kind: 'opened' | 'closed'; confirmed: boolean }
   | { profileId: string; externalId: number; kind: 'open-failed' | 'close-failed'; message: string }
 
+/** What automatic linking did after a sync (see AccountService.linkSyncedProfiles). */
+export interface LinkOutcome {
+  linked: number
+  failed: SyncRun['linkErrors']
+}
+
 const LAST_TEST_KEY = 'ixbrowser.lastTest'
 
 const notConfigured = () =>
@@ -57,10 +63,17 @@ export class IxBrowserService {
   private readonly profileListeners = new Set<(events: ProfileEvent[]) => void>()
   /** Debugging addresses returned by profile-open, kept in memory only (by external id). */
   private readonly debugAddresses = new Map<number, string>()
+  /** Links newly synced profiles to accounts (set by AccountService). */
+  private linker: (() => LinkOutcome) | null = null
 
   constructor(private readonly deps: Deps) {
     const closed = deps.profiles.closeStaleRuns(new Date().toISOString())
     if (closed) deps.log.warn(`Closed ${closed} interrupted sync run(s)`)
+  }
+
+  /** Runs after every successful sync, so every synced profile is ready to use without linking it by hand. */
+  setLinker(linker: () => LinkOutcome): void {
+    this.linker = linker
   }
 
   onProfileEvents(listener: (events: ProfileEvent[]) => void): () => void {
@@ -229,7 +242,7 @@ export class IxBrowserService {
     profiles.startRun(runId, config.id, startedAt)
     log.info('Profile sync started', { provider: config.name })
     const client = this.client(config)
-    const counts = { discovered: 0, added: 0, updated: 0, unavailable: 0, duplicates: 0 }
+    const counts = { discovered: 0, added: 0, updated: 0, unavailable: 0, duplicates: 0, linked: 0, linkFailed: 0, linkErrors: [] as SyncRun['linkErrors'] }
 
     try {
       this.deps.onProgress({ runId, stage: 'listing', fetched: 0, total: null })
@@ -263,6 +276,21 @@ export class IxBrowserService {
       Object.assign(counts, applied)
       profiles.applyRunState(new Set(opened.api), opened.client ? new Set(opened.client) : null, at)
 
+      // Every available profile gets an account record and link; one that can't be linked is reported, and the next sync retries it.
+      if (this.linker) {
+        let outcome: LinkOutcome
+        try {
+          outcome = this.linker()
+        } catch (error) {
+          log.error('Automatic profile linking failed', error)
+          outcome = { linked: 0, failed: profiles.unlinkedAvailable().map((p) => ({ profileId: p.id, name: p.name, reason: 'Linking stopped unexpectedly. Sync again to retry.' })) }
+        }
+        counts.linked = outcome.linked
+        counts.linkFailed = outcome.failed.length
+        counts.linkErrors = outcome.failed
+        if (outcome.failed.length) log.warn(`${outcome.failed.length} profile(s) could not be linked automatically`)
+      }
+
       const run: SyncRun = { id: runId, status: 'succeeded', startedAt, finishedAt: new Date().toISOString(), ...counts, error: null }
       profiles.finishRun(run)
       this.deps.onProgress({ runId, stage: 'done', fetched: unique.size, total: unique.size })
@@ -272,7 +300,10 @@ export class IxBrowserService {
         id: randomUUID(),
         level: 'success',
         message: `Synced ${counts.discovered} browser profile${counts.discovered === 1 ? '' : 's'}`,
-        subject: counts.added || counts.unavailable ? `${counts.added} new · ${counts.unavailable} unavailable` : null,
+        subject:
+          counts.added || counts.unavailable || counts.linked || counts.linkFailed
+            ? [`${counts.added} new`, `${counts.unavailable} unavailable`, counts.linked && `${counts.linked} linked`, counts.linkFailed && `${counts.linkFailed} not linked`].filter(Boolean).join(' · ')
+            : null,
         at: run.finishedAt!
       })
       // A completed sync is also a successful real request.

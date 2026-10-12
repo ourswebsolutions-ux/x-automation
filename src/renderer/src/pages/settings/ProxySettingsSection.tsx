@@ -5,7 +5,7 @@ import { useProxies, useProxyAssignments } from '@/data/proxies'
 import { errorMessage, relay } from '@/lib/bridge'
 import { pluralize } from '@/lib/format'
 
-/** Settings → Proxies: the essentials here; proxies themselves are managed in Accounts & Profiles. */
+/** Settings → Proxies: the essentials here; proxies themselves are managed in Synchronized Profiles → Proxies. */
 export function ProxySettingsSection() {
   const navigate = useNavigate()
   const toast = useToast()

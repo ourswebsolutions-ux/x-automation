@@ -42,6 +42,9 @@ import type {
   PublishCheck,
   PublishingSettings,
   MultiScheduleInput,
+  PublishAllCheck,
+  PublishAllInput,
+  PublishTargets,
   MultiScheduleResult,
   PublishNowInput,
   QueueCounts,
@@ -181,6 +184,8 @@ export interface RelayApi {
     /** Deletes local records only; browser profiles are never deleted. */
     remove(ids: Id[]): Promise<BulkResult>
     createFromProfiles(profileIds: Id[]): Promise<CreateFromProfilesResult>
+    /** Connects a disconnected profile again (re-links its previous account when it still exists). */
+    connectProfile(profileId: Id): Promise<Account>
     openProfile(id: Id): Promise<ProfileOperationResult>
     closeProfile(id: Id): Promise<ProfileOperationResult>
     onChange(listener: () => void): Unsubscribe
@@ -273,6 +278,12 @@ export interface RelayApi {
     publishNow(input: PublishNowInput): Promise<ScheduleEntry>
     /** One manual post from several accounts (copies for the extra accounts). */
     scheduleMany(input: MultiScheduleInput): Promise<MultiScheduleResult>
+    /** Every account that can post now (enabled, synced profile available) — no selection needed. */
+    targets(): Promise<PublishTargets>
+    /** The post checked against every eligible account (runAt: when scheduling). */
+    checkAll(draftId: Id, runAt?: string): Promise<PublishAllCheck>
+    /** Publishes now or schedules the post from every eligible account. */
+    publishAll(input: PublishAllInput): Promise<MultiScheduleResult>
     reschedule(id: Id, runAt: string): Promise<ScheduleEntry>
     unschedule(id: Id): Promise<void>
     returnToDrafts(draftId: Id): Promise<void>

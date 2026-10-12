@@ -8,6 +8,8 @@ shows the publisher's logic works, not that x.com still matches.
 Control (JSON over HTTP, loopback only):
   POST /__control {"mode": ..., "handle": ...}   modes: ok, reject, silent, silent-missing, signed-out,
                                                   no-composer, mangle, button-disabled, slow-upload
+  GET  /intent/post?in_reply_to=<id>              the reply composer (posts are recorded with inReplyTo)
+  GET  /<handle>/with_replies                     that account's replies
   GET  /__posts                                   posts received so far
   POST /__reset
   Cookie xh=<handle>                              that browser is signed in as <handle> instead
@@ -23,6 +25,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Compose / X (test fixture)</title>
 <style>body{font-family:sans-serif;margin:0;display:flex}nav{width:220px;padding:12px;border-right:1px solid #ccc}
@@ -49,7 +52,7 @@ if (input) input.addEventListener('change', () => {
 });
 if (button) button.addEventListener('click', async () => {
   button.disabled = true;
-  const res = await fetch('/__post', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({text: box.innerText, files})});
+  const res = await fetch('/__post', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({text: box.innerText, files, inReplyTo: "__REPLY_TO__" || null})});
   const post = await res.json();
   if (mode === 'silent' || mode === 'silent-missing') return;
   setTimeout(() => {
@@ -108,21 +111,27 @@ class Fixture:
 
             def do_GET(self) -> None:  # noqa: N802
                 path = self.path.split("?")[0]
-                if path == "/compose/post":
+                if path in ("/compose/post", "/intent/post"):
                     if fixture.mode == "signed-out":
                         return self._send(302, "", headers={"location": "/i/flow/login"})
+                    reply_to = parse_qs(urlsplit(self.path).query).get("in_reply_to", [""])[0] if path == "/intent/post" else ""
+                    if path == "/intent/post" and not reply_to.isdigit():
+                        return self._send(400, "in_reply_to is required", "text/plain")
                     composer = "" if fixture.mode == "no-composer" else COMPOSER
-                    page = PAGE.replace("__COMPOSER__", composer).replace("__MODE__", fixture.mode).replace("__HANDLE__", self._handle())
+                    page = PAGE.replace("__COMPOSER__", composer).replace("__MODE__", fixture.mode).replace("__HANDLE__", self._handle()).replace("__REPLY_TO__", reply_to)
                     return self._send(200, page)
                 if path == "/i/flow/login":
                     return self._send(200, LOGIN)
                 profile = path.strip("/")
-                if profile and "/" not in profile and not profile.startswith("__") and profile not in ("compose", "i"):
-                    # A profile page listing the posts this stand-in received (newest first).
+                replies = profile.endswith("/with_replies")
+                if replies:
+                    profile = profile[: -len("/with_replies")]
+                if profile and "/" not in profile and not profile.startswith("__") and profile not in ("compose", "i", "intent"):
+                    # A profile page listing the posts (or, on with_replies, the replies) this stand-in received, newest first.
                     if fixture.mode == "signed-out":
                         return self._send(302, "", headers={"location": "/i/flow/login"})
                     with fixture.lock:
-                        listed = [p for p in reversed(fixture.posts) if p["mode"] not in ("reject", "silent-missing") and p["handle"] == profile]
+                        listed = [p for p in reversed(fixture.posts) if p["mode"] not in ("reject", "silent-missing") and p["handle"] == profile and bool(p.get("inReplyTo")) == replies]
                     articles = "".join(
                         f'<article data-testid="tweet"><div data-testid="tweetText">{html.escape(p["text"])}</div>'
                         f'<a href="/{p["handle"]}/status/{p["id"]}"><time>now</time></a></article>'
@@ -148,7 +157,7 @@ class Fixture:
                 if path == "/__post":
                     body = self._json()
                     with fixture.lock:
-                        post = {"id": str(fixture._next_id), "text": body.get("text", ""), "files": body.get("files", 0), "mode": fixture.mode, "handle": self._handle()}
+                        post = {"id": str(fixture._next_id), "text": body.get("text", ""), "files": body.get("files", 0), "mode": fixture.mode, "handle": self._handle(), "inReplyTo": body.get("inReplyTo") or None}
                         fixture._next_id += 1
                         fixture.posts.append(post)
                     return self._send(200, json.dumps(post), "application/json")

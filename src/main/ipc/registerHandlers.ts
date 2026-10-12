@@ -140,6 +140,7 @@ export function registerIpcHandlers(services: AppServices, getWindow: () => Brow
         accountId: id.nullable(),
         aiAssisted: z.boolean().optional(),
         sourceGenerationId: id.nullable().optional(),
+        comment: z.object({ enabled: z.boolean(), text: z.string().max(25_000, 'Comments can be up to 25,000 characters.') }).strict().optional(),
         attachments: z
           .array(z.object({ assetId: id, altText: z.string().max(1000, 'Image descriptions can be up to 1,000 characters.') }).strict())
           .max(4, 'A post can have up to 4 images.')
@@ -456,6 +457,7 @@ export function registerIpcHandlers(services: AppServices, getWindow: () => Brow
   )
   handle(IpcChannel.AccountsRemove, ids, (accountIds) => accounts.remove(accountIds))
   handle(IpcChannel.AccountsCreateFromProfiles, ids, (profileIds) => accounts.createFromProfiles(profileIds))
+  handle(IpcChannel.AccountsConnectProfile, id, (profileId) => accounts.connectProfile(profileId))
   handle(IpcChannel.AccountsOpenProfile, id, (accountId) => accounts.openProfile(accountId))
   handle(IpcChannel.AccountsCloseProfile, id, (accountId) => accounts.closeProfile(accountId))
 
@@ -547,6 +549,9 @@ export function registerIpcHandlers(services: AppServices, getWindow: () => Brow
     z.object({ draftId: id, accountIds: z.array(id).min(1).max(50), runAt: isoTime.nullable(), allowSameText: z.boolean() }).strict(),
     (input) => publishing.scheduleMany(input)
   )
+  handle(IpcChannel.PublishingTargets, noPayload, () => publishing.targets())
+  handle(IpcChannel.PublishingCheckAll, z.object({ draftId: id, runAt: isoTime.optional() }).strict(), ({ draftId, runAt }) => publishing.checkAll(draftId, runAt))
+  handle(IpcChannel.PublishingPublishAll, z.object({ draftId: id, runAt: isoTime.nullable(), allowSameText: z.boolean() }).strict(), (input) => publishing.publishAll(input))
   handle(IpcChannel.PublishingReschedule, z.object({ id, runAt: isoTime }).strict(), ({ id: scheduleId, runAt }) => publishing.reschedule(scheduleId, runAt))
   handle(IpcChannel.PublishingUnschedule, id, (scheduleId) => publishing.unschedule(scheduleId))
   handle(IpcChannel.PublishingReturnToDrafts, id, (draftId) => publishing.returnToDrafts(draftId))

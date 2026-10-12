@@ -43,6 +43,7 @@ MAX_MEDIA = 4
 MAX_MEDIA_BYTES = 15 * 1024 * 1024
 MEDIA_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 HANDLE = re.compile(r"^[A-Za-z0-9_]{1,15}$")
+POST_ID = re.compile(r"^\d{1,25}$")
 STATUS_PATH = re.compile(r"^/([A-Za-z0-9_]{1,15})/status/(\d{1,25})")
 LOGIN_PATHS = ("/login", "/i/flow/login", "/i/flow/signup", "/account/access")
 
@@ -108,6 +109,7 @@ async def find_post(connect: Any, params: dict[str, Any]) -> dict[str, Any]:
     Used when X did not confirm a submission: a post with exactly this text
     among the newest posts means it went out. Not finding it proves nothing
     (timelines can lag), so the caller keeps treating that as unknown.
+    With `replies`, the profile's Replies tab is searched (for a comment).
     """
     endpoint = validate_endpoint(require_str(params, "endpoint", 300))
     handle = params.get("handle")
@@ -116,6 +118,9 @@ async def find_post(connect: Any, params: dict[str, Any]) -> dict[str, Any]:
     text = params.get("text", "")
     if not isinstance(text, str) or not text.strip() or len(text) > MAX_TEXT_CHARS:
         raise EngineError("INVALID_PARAMS", "text must be the post text.")
+    replies = params.get("replies", False)
+    if not isinstance(replies, bool):
+        raise EngineError("INVALID_PARAMS", "replies must be true or false.")
     timeout_ms = require_int(params, "timeoutMs", 5_000, 60_000, 20_000)
     base = _base_url(params)
     wanted = _normalise(text)
@@ -127,7 +132,7 @@ async def find_post(connect: Any, params: dict[str, Any]) -> dict[str, Any]:
         page = await contexts[0].new_page()
         try:
             page.set_default_timeout(timeout_ms)
-            await page.goto(f"{base}/{handle}", wait_until="domcontentloaded")
+            await page.goto(f"{base}/{handle}/with_replies" if replies else f"{base}/{handle}", wait_until="domcontentloaded")
             if _on_login_page(page.url):
                 raise EngineError("SESSION_EXPIRED", "This profile is signed out of X.")
             if not await _first_visible(page, SELECTORS["post"], timeout_ms):
@@ -191,6 +196,15 @@ async def publish(connect: Any, params: dict[str, Any]) -> dict[str, Any]:
     expected = params.get("expectedHandle")
     if expected is not None and (not isinstance(expected, str) or not HANDLE.match(expected)):
         raise EngineError("INVALID_PARAMS", "expectedHandle must be an X username.")
+    # A comment: a reply to one post (the account's own, published just before), through X's documented
+    # post web intent. The composer, checks and confirmation are the same as for a post.
+    in_reply_to = params.get("inReplyTo")
+    if in_reply_to is not None and (not isinstance(in_reply_to, str) or not POST_ID.match(in_reply_to)):
+        raise EngineError("INVALID_PARAMS", "inReplyTo must be a post id.")
+    if in_reply_to is not None and media:
+        raise EngineError("INVALID_PARAMS", "A comment can't carry images.")
+    if in_reply_to is not None and not text.strip():
+        raise EngineError("INVALID_PARAMS", "A comment needs text.")
     timeout_ms = require_int(params, "timeoutMs", 5_000, 120_000, 30_000)
     confirm_ms = require_int(params, "confirmTimeoutMs", 5_000, 120_000, 45_000)
     base = _base_url(params)
@@ -214,7 +228,8 @@ async def publish(connect: Any, params: dict[str, Any]) -> dict[str, Any]:
             page.set_default_timeout(timeout_ms)
             progress("open-composer")
             t = time.monotonic()
-            await page.goto(f"{base}/compose/post", wait_until="domcontentloaded")
+            target = f"{base}/intent/post?in_reply_to={in_reply_to}" if in_reply_to else f"{base}/compose/post"
+            await page.goto(target, wait_until="domcontentloaded")
             if _on_login_page(page.url):
                 raise EngineError("SESSION_EXPIRED", "This profile is signed out of X. Sign in in IX Browser, then try again.")
             if not await _first_visible(page, SELECTORS["composer"], timeout_ms):
@@ -288,6 +303,7 @@ async def publish(connect: Any, params: dict[str, Any]) -> dict[str, Any]:
                             "postId": match.group(2),
                             "handle": match.group(1),
                             "accountCheck": account_check,
+                            "inReplyTo": in_reply_to,
                             "steps": steps,
                         }
                 if await page.locator(SELECTORS["toast"]).count():

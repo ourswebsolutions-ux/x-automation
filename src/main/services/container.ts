@@ -257,22 +257,23 @@ export async function createServices(): Promise<AppServices> {
     onChange: publishingChanged
   })
   retryDelay = (attempt) => retryDelayMs(publishing.getSettings(), attempt)
-  queue.register(
-    new PublishHandler({
-      drafts: repositories.drafts,
-      accounts: accountRepo,
-      postLinks,
-      queueRepo,
-      ixBrowser,
-      engine,
-      assetFile: (id) => assets.fileFor(id)?.path ?? null,
-      settings: () => publishing.getSettings(),
-      settle: (task, settlement) => publishing.settleTask(task, settlement),
-      log: logger.scope('publishing'),
-      notifier,
-      testBaseUrl
-    })
-  )
+  const publishDeps: ConstructorParameters<typeof PublishHandler>[0] = {
+    drafts: repositories.drafts,
+    accounts: accountRepo,
+    postLinks,
+    queueRepo,
+    ixBrowser,
+    engine,
+    assetFile: (id) => assets.fileFor(id)?.path ?? null,
+    settings: () => publishing.getSettings(),
+    settle: (task, settlement) => publishing.settleTask(task, settlement),
+    log: logger.scope('publishing'),
+    notifier,
+    testBaseUrl
+  }
+  queue.register(new PublishHandler(publishDeps))
+  // Comments saved with a post: the same account replies to its own confirmed post.
+  queue.register(new PublishHandler(publishDeps, 'reply'))
   const scheduler = new Scheduler({
     db: database.db,
     schedules,

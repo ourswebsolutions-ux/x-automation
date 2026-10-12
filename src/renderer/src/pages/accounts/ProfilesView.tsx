@@ -1,6 +1,8 @@
 import {
   CircleCheck,
   CircleDashed,
+  Link2,
+  Link2Off,
   CircleSlash,
   CircleX,
   Globe,
@@ -48,6 +50,19 @@ import { settingsPath } from '@/app/navigation'
 import { CompatibilityPanel } from './CompatibilityPanel'
 import { ProfileStateBadge } from './ProfileStateBadge'
 
+/**
+ * Whether a profile is ready for Create Post and Campaigns. Syncing links every available profile
+ * to an account automatically; a profile you disconnected stays out until you connect it again.
+ */
+function linkState(p: BrowserProfile, account: Account | null, linkError: string | null): { label: string; tone: 'success' | 'warning' | 'danger' | 'neutral'; hint: string } {
+  if (p.availability === 'unavailable') return { label: 'Unavailable', tone: 'neutral', hint: 'IX Browser no longer reports this profile, so it is left out until it is reported again.' }
+  if (account?.enabled) return { label: 'Connected', tone: 'success', hint: 'Used by Create Post and Campaigns.' }
+  if (account) return { label: 'Disabled', tone: 'warning', hint: 'Its account is disabled for tasks (X accounts tab), so it is left out.' }
+  if (p.linkExcludedAt) return { label: 'Disconnected', tone: 'neutral', hint: `You disconnected it ${formatRelative(p.linkExcludedAt)}. Syncs leave it out until you connect it again.` }
+  if (linkError) return { label: 'Link failed', tone: 'danger', hint: `${linkError} Sync again to retry.` }
+  return { label: 'Not linked yet', tone: 'neutral', hint: 'It is linked automatically on the next sync.' }
+}
+
 type Filter = 'all' | 'running' | 'closed' | 'new' | 'unavailable'
 
 const matches = (p: BrowserProfile, filter: Filter) =>
@@ -82,6 +97,12 @@ export function ProfilesView() {
   const list = profiles.data ?? []
   const selected = list.find((p) => p.externalId === selectedId) ?? null
   const pending = o?.pending ?? {}
+  const accountOf = useMemo(() => {
+    const byProfile = new Map((accounts.data ?? []).filter((a) => a.profile).map((a) => [a.profile!.id, a]))
+    return (p: BrowserProfile) => byProfile.get(p.id) ?? null
+  }, [accounts.data])
+  const linkErrorOf = (p: BrowserProfile) => o?.lastSync?.linkErrors.find((e) => e.profileId === p.id)?.reason ?? null
+  const connected = list.filter((p) => linkState(p, accountOf(p), null).label === 'Connected').length
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -105,15 +126,34 @@ export function ProfilesView() {
   const sync = async () => {
     try {
       const run = await relay.ixbrowser.sync()
+      accounts.reload()
+      profiles.reload()
       toast({
-        tone: 'success',
-        title: 'Profiles synchronised',
-        description: `${run.discovered} found · ${run.added} new · ${run.updated} updated · ${run.unavailable} unavailable`
+        tone: run.linkFailed ? 'warning' : 'success',
+        title: 'Profiles synchronized',
+        description: `${run.discovered} found · ${run.added} new · ${run.linked} linked automatically · ${run.unavailable} unavailable${run.linkFailed ? ` · ${run.linkFailed} could not be linked — sync again to retry` : ''}`,
+        duration: run.linkFailed ? 9000 : undefined
       })
     } catch (error) {
       const message = errorMessage(error)
       if (!message.startsWith('Cancelled')) toast({ tone: 'danger', title: 'Sync failed', description: message, duration: 9000 })
       else toast({ tone: 'info', title: 'Sync cancelled' })
+    }
+  }
+
+  /** Disconnect: the profile's account is unlinked and syncs leave it alone. Connect: the same account is linked again (a new record if it was removed). */
+  const setConnected = async (profile: BrowserProfile, connect: boolean) => {
+    try {
+      const account = accountOf(profile)
+      const result = connect ? (await relay.accounts.connectProfile(profile.id), null) : account ? await relay.accounts.unlink([account.id]) : null
+      const skipped = result?.skipped[0]?.reason
+      if (skipped) toast({ tone: 'warning', title: connect ? 'Not connected' : 'Not disconnected', description: skipped })
+      else toast({ tone: 'success', title: connect ? `“${profile.name}” connected` : `“${profile.name}” disconnected`, description: connect ? 'Create Post and Campaigns use it from now on.' : 'Create Post and Campaigns leave it out. The browser profile itself was not changed.' })
+    } catch (error) {
+      toast({ tone: 'danger', title: connect ? 'Could not connect the profile' : 'Could not disconnect the profile', description: errorMessage(error) })
+    } finally {
+      accounts.reload()
+      profiles.reload()
     }
   }
 
@@ -171,7 +211,7 @@ export function ProfilesView() {
     {
       id: 'name',
       header: 'Profile',
-      width: '38%',
+      width: '30%',
       sortValue: (p) => p.name.toLowerCase(),
       cell: (p) => (
         <span className="flex min-w-0 items-center gap-2">
@@ -180,9 +220,27 @@ export function ProfilesView() {
         </span>
       )
     },
-    { id: 'id', header: 'ID', width: '12%', sortValue: (p) => p.externalId, cell: (p) => <span className="tabular font-mono text-xs text-fg-muted">#{p.externalId}</span> },
-    { id: 'status', header: 'Status', width: '17%', sortValue: (p) => (p.availability === 'unavailable' ? 3 : p.runState === 'running' ? 0 : 1), cell: (p) => <ProfileStateBadge profile={p} /> },
-    { id: 'synced', header: 'Last synced', width: '16%', sortValue: (p) => p.lastSyncedAt, cell: (p) => <span className="tabular text-xs text-fg-subtle">{formatRelative(p.lastSyncedAt)}</span> },
+    { id: 'id', header: 'ID', width: '9%', sortValue: (p) => p.externalId, cell: (p) => <span className="tabular font-mono text-xs text-fg-muted">#{p.externalId}</span> },
+    { id: 'status', header: 'Status', width: '13%', sortValue: (p) => (p.availability === 'unavailable' ? 3 : p.runState === 'running' ? 0 : 1), cell: (p) => <ProfileStateBadge profile={p} /> },
+    {
+      id: 'link',
+      header: 'Posting',
+      width: '15%',
+      sortValue: (p) => linkState(p, accountOf(p), linkErrorOf(p)).label,
+      cell: (p) => {
+        const state = linkState(p, accountOf(p), linkErrorOf(p))
+        return (
+          <Tooltip content={state.hint}>
+            <span>
+              <StatusBadge tone={state.tone} dot={state.tone !== 'neutral'}>
+                {state.label}
+              </StatusBadge>
+            </span>
+          </Tooltip>
+        )
+      }
+    },
+    { id: 'synced', header: 'Last synced', width: '14%', sortValue: (p) => p.lastSyncedAt, cell: (p) => <span className="tabular text-xs text-fg-subtle">{formatRelative(p.lastSyncedAt)}</span> },
     {
       id: 'actions',
       header: '',
@@ -213,7 +271,7 @@ export function ProfilesView() {
 
       <div className="grid grid-cols-2 gap-3 @4xl:grid-cols-4">
         <MetricCard label="Profiles discovered" icon={LayoutGrid} value={o.counts.total} hint={o.counts.unavailable ? `${o.counts.unavailable} no longer in IX Browser` : 'From the last sync'} />
-        <MetricCard label="Available" icon={CircleCheck} value={o.counts.available} hint="Reported by the last sync" />
+        <MetricCard label="Connected" icon={CircleCheck} value={connected} hint={`Ready for Create Post and Campaigns · ${o.counts.available} available`} />
         <MetricCard label="Running" icon={MonitorPlay} value={o.counts.running} hint="From IX Browser’s opened-profile lists" />
         <SyncTile run={o.lastSync} syncing={o.syncing} />
       </div>
@@ -279,8 +337,11 @@ export function ProfilesView() {
           {selected ? (
             <ProfileDetails
               profile={selected}
-              account={accounts.data?.find((a) => a.profile?.id === selected.id) ?? null}
-              onShowAccount={(id) => navigate(`/accounts?q=${encodeURIComponent(id)}`)}
+              account={accountOf(selected)}
+              linkError={linkErrorOf(selected)}
+              onConnect={() => setConnected(selected, true)}
+              onDisconnect={() => setConnected(selected, false)}
+              onShowAccount={(id) => navigate(`/accounts?view=accounts&q=${encodeURIComponent(id)}`)}
               pending={pending[selected.externalId]}
               canOperate={o.configured}
               onOpen={() => operate(selected, 'open')}
@@ -459,6 +520,9 @@ function SyncTile({ run, syncing }: { run: SyncRun | null; syncing: boolean }) {
 function ProfileDetails(props: {
   profile: BrowserProfile
   account: Account | null
+  linkError: string | null
+  onConnect: () => void
+  onDisconnect: () => void
   onShowAccount: (search: string) => void
   pending: 'open' | 'close' | undefined
   canOperate: boolean
@@ -510,19 +574,41 @@ function ProfileDetails(props: {
           </div>
         )}
       </dl>
-      <div className="flex min-h-10 items-center justify-between gap-3 border-t border-line px-4 py-2 text-sm">
-        <span className="shrink-0 text-fg-subtle">Account</span>
-        {props.account ? (
-          <button
-            type="button"
-            onClick={() => props.onShowAccount(String(p.externalId))}
-            className="truncate rounded-xs text-right text-accent-text hover:underline focus-ring"
-          >
-            {props.account.label}
-            {props.account.handle && <span className="text-fg-subtle"> · @{props.account.handle}</span>}
-          </button>
-        ) : (
-          <span className="text-fg-subtle">Not linked</span>
+      <div className="flex flex-col gap-2 border-t border-line px-4 py-2.5 text-sm">
+        <div className="flex min-h-6 items-center justify-between gap-3">
+          <span className="shrink-0 text-fg-subtle">Posting</span>
+          <StatusBadge tone={linkState(p, props.account, props.linkError).tone} dot>
+            {linkState(p, props.account, props.linkError).label}
+          </StatusBadge>
+        </div>
+        <p className="text-xs text-fg-subtle">{linkState(p, props.account, props.linkError).hint}</p>
+        <div className="flex min-h-6 items-center justify-between gap-3">
+          <span className="shrink-0 text-fg-subtle">Account</span>
+          {props.account ? (
+            <button
+              type="button"
+              onClick={() => props.onShowAccount(props.account!.label)}
+              className="truncate rounded-xs text-right text-accent-text hover:underline focus-ring"
+            >
+              {props.account.label}
+              {props.account.handle && <span className="text-fg-subtle"> · @{props.account.handle}</span>}
+            </button>
+          ) : (
+            <span className="text-fg-subtle">None</span>
+          )}
+        </div>
+        {p.availability === 'available' && (
+          <div className="flex justify-end">
+            {props.account ? (
+              <Button size="sm" variant="ghost" icon={Link2Off} disabled={Boolean(props.pending)} onClick={props.onDisconnect}>
+                Disconnect
+              </Button>
+            ) : (
+              <Button size="sm" variant="secondary" icon={Link2} onClick={props.onConnect}>
+                Connect
+              </Button>
+            )}
+          </div>
         )}
       </div>
       {metadata.length > 0 && (
@@ -562,7 +648,7 @@ function ProfileDetails(props: {
 }
 
 function SyncHistory({ runs, onRetry, syncing, configured }: { runs: SyncRun[] | null; onRetry: () => void; syncing: boolean; configured: boolean }) {
-  const latestFailed = runs?.[0]?.status === 'failed'
+  const latestFailed = runs?.[0]?.status === 'failed' || (runs?.[0]?.linkFailed ?? 0) > 0
   return (
     <Panel
       title="Sync history"
@@ -601,9 +687,16 @@ function SyncHistory({ runs, onRetry, syncing, configured }: { runs: SyncRun[] |
                 {run.status === 'succeeded' && (
                   <span className="text-xs text-fg-subtle">
                     {run.added} new · {run.updated} updated · {run.unavailable} unavailable
+                    {run.linked > 0 && ` · ${run.linked} linked`}
                     {run.duplicates > 0 && ` · ${run.duplicates} duplicate${run.duplicates === 1 ? '' : 's'} ignored`}
                   </span>
                 )}
+                {run.linkErrors.slice(0, 5).map((e) => (
+                  <span key={e.profileId} className="break-words text-xs text-danger">
+                    Not linked: {e.name} — {e.reason}
+                  </span>
+                ))}
+                {run.linkFailed > 5 && <span className="text-xs text-danger">…and {run.linkFailed - 5} more</span>}
                 {run.error && <span className="break-words text-xs text-danger">{run.error}</span>}
               </div>
             </li>

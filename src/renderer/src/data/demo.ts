@@ -93,6 +93,7 @@ export const DEMO_DRAFTS: Draft[] = [
     hashtags: [],
     sourceGenerationId: null,
     media: [],
+    comment: { enabled: false, text: '' },
     createdAt: minutesAgo(70),
     updatedAt: minutesAgo(40)
   },
@@ -105,6 +106,7 @@ export const DEMO_DRAFTS: Draft[] = [
     hashtags: [],
     sourceGenerationId: null,
     media: [],
+    comment: { enabled: false, text: '' },
     createdAt: minutesAgo(180),
     updatedAt: minutesAgo(150)
   },
@@ -117,6 +119,7 @@ export const DEMO_DRAFTS: Draft[] = [
     hashtags: [],
     sourceGenerationId: null,
     media: [],
+    comment: { enabled: false, text: '' },
     createdAt: minutesAgo(600),
     updatedAt: minutesAgo(560)
   }

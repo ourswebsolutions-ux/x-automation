@@ -133,6 +133,12 @@ export class RunService {
 
   constructor(private readonly deps: Deps) {
     deps.queue.onSettled((task, settlement) => {
+      // A comment settles after its post: the run finishes once both have an outcome.
+      if (task.kind === 'reply' && task.draftId) {
+        const owner = deps.db.get<{ run_id: string }>("SELECT run_id FROM run_items WHERE draft_id = :id AND kind = 'post'", { id: task.draftId })
+        if (owner) this.checkFinished(owner.run_id)
+        return
+      }
       if (task.kind !== 'publish' || !task.scheduleId) return
       const row = deps.db.get<{ run_id: string }>('SELECT run_id FROM run_items WHERE schedule_id = :id', { id: task.scheduleId })
       if (!row) return
@@ -239,7 +245,13 @@ export class RunService {
     const unconfirmed = plannedTargets.filter((t) => t.reason === 'Username not confirmed').length
     if (notLinked) warn(`${notLinked} ${notLinked === 1 ? 'profile has' : 'profiles have'} no account record and will be left out.`)
     if (unconfirmed) warn(`${unconfirmed} ${unconfirmed === 1 ? 'account has' : 'accounts have'} no confirmed X username, so the signed-in account can’t be checked — left out.`)
-    if (!targets.requireConfirmedIdentity && publishing) warn('Posts may go out without checking which X account is signed in to the profile.')
+    const unchecked = eligible.filter((t) => {
+      const account = t.accountId ? this.deps.accounts.get(t.accountId) : null
+      return !account || account.identity !== 'confirmed' || !account.handle
+    }).length
+    if (!targets.requireConfirmedIdentity && publishing && unchecked) {
+      warn(`${unchecked} of ${eligible.length} ${eligible.length === 1 ? 'profile' : 'profiles'} ${unchecked === 1 ? 'has' : 'have'} no confirmed X username, so posts go out without checking which X account is signed in there.`)
+    }
     if ((publishing || actions.repost || actions.comment || actions.like) && eligible.length === 0 && chosen.length > 0) block('None of the chosen profiles can be used.')
 
     // Posts.
@@ -319,6 +331,12 @@ export class RunService {
     else if (content.existingAssetId) summary.push('Attach the selected library image')
     if (kinds.length) summary.push(`Plan ${kinds.join(', ')} tasks (done by you)`)
 
+    // Comments saved with the chosen posts go out as replies to each post (one per post, same account).
+    const withComment = usableDrafts.slice(0, fromDrafts).filter((d) => d.hasComment).length
+    const perText = targets.distribution === 'same' ? Math.max(eligible.length, 1) : 1
+    const comments = publishing && fromDrafts ? Math.min(withComment * perText, posts) : 0
+    if (comments) summary.push(`Post ${comments === 1 ? 'the comment' : `${comments} comments`} as a reply from the same account after each post`)
+
     return {
       ok: !problems.some((p) => p.blocking),
       problems,
@@ -336,6 +354,7 @@ export class RunService {
       fromDrafts,
       // Generated images, or (campaigns from saved posts) the posts that already carry an image.
       images: content.generateImages ? generations + usableDrafts.slice(0, fromDrafts).filter((d) => !d.hasMedia).length : usableDrafts.slice(0, fromDrafts).filter((d) => d.hasMedia).length,
+      comments,
       engagementTasks,
       firstRunAt,
       lastRunAt,
@@ -475,6 +494,18 @@ export class RunService {
         cancelled++
       } catch {
         // Already publishing: it finishes; the outcome is recorded as usual.
+      }
+    }
+    // Comments that haven't started don't go out either (a running one finishes).
+    for (const { id } of this.deps.db.all<{ id: string }>(
+      `SELECT t.id FROM tasks t JOIN run_items i ON i.draft_id = t.draft_id AND i.kind = 'post'
+       WHERE i.run_id = :runId AND t.kind = 'reply' AND t.status = 'queued'`,
+      { runId }
+    )) {
+      try {
+        this.deps.queue.cancel(id)
+      } catch {
+        // It started in the meantime; its outcome is recorded as usual.
       }
     }
     this.finish(runId, 'stopped')
@@ -735,16 +766,17 @@ export class RunService {
   }
 
   /** Drafts that can go into a run, in the order given: still drafts, not scheduled or published. */
-  private usableDrafts(ids: Id[]): { id: Id; hasMedia: boolean }[] {
+  private usableDrafts(ids: Id[]): { id: Id; hasMedia: boolean; hasComment: boolean }[] {
     if (!ids.length) return []
-    const rows = this.deps.db.all<{ id: string; media: number }>(
-      `SELECT d.id, (SELECT COUNT(*) FROM draft_attachments a WHERE a.draft_id = d.id) AS media FROM drafts d
+    const rows = this.deps.db.all<{ id: string; media: number; comment: number }>(
+      `SELECT d.id, (SELECT COUNT(*) FROM draft_attachments a WHERE a.draft_id = d.id) AS media,
+         (d.comment_enabled = 1 AND trim(d.comment_text) <> '') AS comment FROM drafts d
        WHERE d.id IN (SELECT value FROM json_each(:ids)) AND d.status IN ('draft', 'ready')
          AND NOT EXISTS (SELECT 1 FROM scheduled_posts s WHERE s.draft_id = d.id AND s.status IN ('pending', 'queued', 'missed', 'needs-review'))`,
       { ids: JSON.stringify(ids) }
     )
-    const byId = new Map(rows.map((r) => [r.id, r.media > 0]))
-    return [...new Set(ids)].filter((id) => byId.has(id)).map((id) => ({ id, hasMedia: byId.get(id)! }))
+    const byId = new Map(rows.map((r) => [r.id, r]))
+    return [...new Set(ids)].filter((id) => byId.has(id)).map((id) => ({ id, hasMedia: byId.get(id)!.media > 0, hasComment: byId.get(id)!.comment === 1 }))
   }
 
   /** Text generation with retries; returns up to `count` new, distinct posts within the length limit. */
@@ -1019,6 +1051,13 @@ export class RunService {
       { runId }
     )?.n
     if (open) return this.deps.onChange()
+    // Comments still waiting or being posted keep the campaign running.
+    const comments = this.deps.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM run_items i JOIN tasks t ON t.kind = 'reply' AND t.draft_id = i.draft_id
+       WHERE i.run_id = :runId AND i.kind = 'post' AND t.status IN ('queued', 'running')`,
+      { runId }
+    )?.n
+    if (comments) return this.deps.onChange()
     this.finish(runId, 'completed')
   }
 
@@ -1033,6 +1072,8 @@ export class RunService {
         title: 'Automation finished',
         body: [
           counts.published && `${counts.published} published`,
+          counts.comments.posted && `${counts.comments.posted} ${counts.comments.posted === 1 ? 'comment' : 'comments'} posted`,
+          counts.comments.failed && `${counts.comments.failed} ${counts.comments.failed === 1 ? 'comment' : 'comments'} not posted`,
           counts.saved && `${counts.saved} saved`,
           counts.needsReview && `${counts.needsReview} need review`,
           counts.failed && `${counts.failed} failed`
@@ -1080,7 +1121,9 @@ export class RunService {
            s.status AS schedule_status,
            (SELECT t.status FROM tasks t WHERE t.schedule_id = s.id ORDER BY t.created_at DESC LIMIT 1) AS task_status,
            (SELECT l.url FROM post_links l JOIN tasks t ON t.id = l.task_id WHERE t.schedule_id = s.id LIMIT 1) AS post_url,
-           e.status AS engagement_status, e.kind AS engagement_kind, l2.url AS engagement_url
+           e.status AS engagement_status, e.kind AS engagement_kind, l2.url AS engagement_url,
+           d.comment_enabled AS comment_enabled, d.comment_text AS comment_text,
+           r.status AS reply_status, r.result AS reply_result, r.error AS reply_error
          FROM run_items i
          LEFT JOIN browser_profiles p ON p.id = i.profile_id
          LEFT JOIN accounts a ON a.id = i.account_id
@@ -1088,6 +1131,7 @@ export class RunService {
          LEFT JOIN scheduled_posts s ON s.id = i.schedule_id
          LEFT JOIN engagement_tasks e ON e.id = i.engagement_task_id
          LEFT JOIN post_links l2 ON l2.id = e.link_id
+         LEFT JOIN tasks r ON r.id = (SELECT id FROM tasks WHERE kind = 'reply' AND draft_id = i.draft_id ORDER BY created_at DESC LIMIT 1)
          WHERE i.run_id = :runId ORDER BY i.position`,
         { runId }
       )
@@ -1111,15 +1155,32 @@ export class RunService {
         scheduleStatus: (r.schedule_status as ScheduleStatus) ?? null,
         taskStatus: (r.task_status as TaskStatus) ?? null,
         postUrl: (r.post_url as string) ?? null,
+        comment: r.kind === 'post' && Number(r.comment_enabled) === 1 && String(r.comment_text ?? '').trim() ? this.commentOf(r) : null,
         runAt: (r.run_at as string) ?? null,
         error: (r.error as string) ?? null
       }))
   }
 
+  private commentOf(r: Record<string, unknown>): NonNullable<RunItem['comment']> {
+    let url: string | null = null
+    try {
+      url = r.reply_result ? ((JSON.parse(String(r.reply_result)) as { url?: string | null }).url ?? null) : null
+    } catch {
+      url = null
+    }
+    return { text: String(r.comment_text).trim(), status: (r.reply_status as TaskStatus) ?? null, url, error: (r.reply_error as string) ?? null }
+  }
+
   private countsOf(items: RunItem[]): RunCounts {
-    const c: RunCounts = { total: 0, pending: 0, awaitingApproval: 0, scheduled: 0, published: 0, failed: 0, needsReview: 0, skipped: 0, saved: 0 }
+    const c: RunCounts = { total: 0, pending: 0, awaitingApproval: 0, scheduled: 0, published: 0, failed: 0, needsReview: 0, skipped: 0, saved: 0, comments: { total: 0, posted: 0, failed: 0, pending: 0 } }
     for (const i of items) {
       if (i.status === 'removed') continue
+      if (i.comment && i.status === 'scheduled' && !['failed', 'cancelled'].includes(i.scheduleStatus ?? '')) {
+        c.comments.total++
+        if (i.comment.status === 'succeeded') c.comments.posted++
+        else if (i.comment.status === 'failed' || i.comment.status === 'cancelled' || i.comment.status === 'needs-review') c.comments.failed++
+        else c.comments.pending++
+      }
       c.total++
       if (i.status === 'pending' || i.status === 'generating') c.pending++
       else if (i.status === 'awaiting-approval') c.awaitingApproval++
@@ -1146,7 +1207,7 @@ export class RunService {
       config: withContentDefaults(JSON.parse(row.config!) as AutomationConfig),
       message: row.message ?? null,
       scheduleId: row.schedule_id ?? null,
-      counts: withCounts ? this.countsOf(this.items(row.id!)) : { total: 0, pending: 0, awaitingApproval: 0, scheduled: 0, published: 0, failed: 0, needsReview: 0, skipped: 0, saved: 0 },
+      counts: withCounts ? this.countsOf(this.items(row.id!)) : { total: 0, pending: 0, awaitingApproval: 0, scheduled: 0, published: 0, failed: 0, needsReview: 0, skipped: 0, saved: 0, comments: { total: 0, posted: 0, failed: 0, pending: 0 } },
       createdAt: row.created_at!,
       updatedAt: row.updated_at!,
       finishedAt: row.finished_at ?? null

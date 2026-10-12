@@ -88,7 +88,7 @@ export function AutomationSection() {
       {selfCheck && (
         <Notice tone={selfCheck.ok ? 'neutral' : 'warning'} icon={selfCheck.ok ? CircleCheck : CircleX} title={selfCheck.ok ? 'The automation engine works' : 'The automation engine could not start'}>
           {selfCheck.ok
-            ? `Checked ${formatRelative(selfCheck.checkedAt)}. To check a specific browser profile, use “Check automation compatibility” on it in Accounts & Profiles.`
+            ? `Checked ${formatRelative(selfCheck.checkedAt)}. To check a specific browser profile, use “Check automation compatibility” on it in Synchronized Profiles.`
             : 'Choose Restart and check again. If it keeps failing, reinstall X Auto.'}
         </Notice>
       )}

@@ -1,4 +1,4 @@
-import { CheckCheck, ExternalLink, ListTodo, PencilLine, Play, RotateCw, Square, Trash2 } from 'lucide-react'
+import { CheckCheck, ExternalLink, ListTodo, MessageSquareReply, PencilLine, Play, RotateCw, Square, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { RunItem, RunStatus } from '@shared/types/automation'
@@ -50,6 +50,28 @@ function itemState(i: RunItem): { label: string; tone: Tone } {
       if (i.scheduleStatus === 'cancelled') return { label: 'Cancelled', tone: 'neutral' }
       if (i.taskStatus === 'running') return { label: 'Publishing', tone: 'info' }
       return { label: 'Scheduled', tone: 'info' }
+  }
+}
+
+/** The comment under a post: it waits for the post, then posts as a reply from the same account. */
+function commentState(c: NonNullable<RunItem['comment']>, post: RunItem): { label: string; tone: Tone } {
+  switch (c.status) {
+    case 'succeeded':
+      return { label: 'Comment posted', tone: 'success' }
+    case 'running':
+      return { label: 'Posting comment', tone: 'info' }
+    case 'queued':
+      return { label: 'Comment waiting', tone: 'info' }
+    case 'failed':
+      return { label: 'Comment failed', tone: 'danger' }
+    case 'needs-review':
+      return { label: 'Comment needs review', tone: 'warning' }
+    case 'cancelled':
+      return { label: 'Comment cancelled', tone: 'neutral' }
+    default:
+      return post.scheduleStatus === 'failed' || post.scheduleStatus === 'cancelled' || post.status === 'failed' || post.status === 'skipped'
+        ? { label: 'Comment not posted', tone: 'neutral' }
+        : { label: 'Comment after the post', tone: 'neutral' }
   }
 }
 
@@ -119,7 +141,8 @@ export function RunPanel({ runId }: { runId: string }) {
             c.saved && `${c.saved} saved`,
             c.needsReview && `${c.needsReview} need review`,
             c.failed && `${c.failed} failed`,
-            c.skipped && `${c.skipped} skipped`
+            c.skipped && `${c.skipped} skipped`,
+            c.comments.total && `comments: ${c.comments.posted} of ${c.comments.total} posted${c.comments.failed ? `, ${c.comments.failed} not posted` : ''}`
           ]
             .filter(Boolean)
             .join(' · ') || 'Getting ready…'}
@@ -156,6 +179,21 @@ export function RunPanel({ runId }: { runId: string }) {
                     {i.fromDraft && <span>your draft</span>}
                   </span>
                   {i.error && <span className="text-xs text-fg-subtle">{i.error}</span>}
+                  {i.comment && (
+                    <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-fg-subtle">
+                      <MessageSquareReply size={12} />
+                      <StatusBadge tone={commentState(i.comment, i).tone} dot>
+                        {commentState(i.comment, i).label}
+                      </StatusBadge>
+                      <span className="line-clamp-1 min-w-0 flex-1">{i.comment.text}</span>
+                      {i.comment.url && (
+                        <Button size="sm" variant="ghost" onClick={() => void relay.shell.openExternal(i.comment!.url!)}>
+                          View comment
+                        </Button>
+                      )}
+                    </span>
+                  )}
+                  {i.comment?.error && i.comment.status !== 'succeeded' && <span className="text-xs text-fg-subtle">{i.comment.error}</span>}
                 </span>
                 <span className="flex shrink-0 items-center gap-1">
                   {i.status === 'awaiting-approval' && (
@@ -188,7 +226,7 @@ export function RunPanel({ runId }: { runId: string }) {
       <ConfirmDialog
         open={confirmStop}
         title="Stop this automation?"
-        description="Nothing more is generated, and posts that haven’t started publishing are cancelled and go back to your drafts. A post being published right now finishes."
+        description="Nothing more is generated, and posts and comments that haven’t started are cancelled (posts go back to your drafts). A post or comment being published right now finishes."
         confirmLabel="Stop"
         cancelLabel="Keep running"
         tone="danger"

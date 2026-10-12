@@ -30,6 +30,15 @@ export interface MediaAttachment {
   available: boolean
 }
 
+/**
+ * A comment saved with a post. After X confirms the post, the same account posts the comment as a
+ * reply to that post — never to anyone else's post, and never from another account.
+ */
+export interface PostComment {
+  enabled: boolean
+  text: string
+}
+
 export interface AttachmentInput {
   assetId: Id
   altText: string
@@ -48,6 +57,8 @@ export interface Draft {
   sourceGenerationId: Id | null
   /** Image attachments, in order (draft_attachments → image_assets). */
   media: MediaAttachment[]
+  /** Posted as a reply to this post by the same account, once the post is confirmed. */
+  comment: PostComment
   createdAt: Timestamp
   updatedAt: Timestamp
 }
@@ -65,6 +76,8 @@ export interface DraftInput {
   sourceGenerationId?: Id | null
   /** Full ordered list of attachments; omitted = keep the current ones. */
   attachments?: AttachmentInput[]
+  /** Omitted = keep the current comment. */
+  comment?: PostComment
 }
 
 /**

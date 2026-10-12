@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { attachmentProblem, attachmentSetProblem, X_MEDIA_LIMITS } from '@shared/config/mediaLimits'
 import { MAX_HASHTAGS, normalizeHashtag } from '@shared/config/postLimits'
-import type { AttachmentInput, Draft, DraftInput, Id } from '@shared/types/domain'
+import { commentProblems, NO_COMMENT } from '@shared/lib/postComment'
+import type { AttachmentInput, Draft, DraftInput, Id, PostComment } from '@shared/types/domain'
 import type { AssetRepository } from '../database/sqlite/assetRepository'
 import type { SqliteDatabase } from '../database/driver'
 import type { WorkspaceRepositories } from '../database/repositories'
@@ -41,6 +42,7 @@ export class DraftService {
     if (!body.trim() && !(input.hashtags ?? existing?.hashtags ?? []).length && !hasMedia) throw new ValidationError('A draft needs some text or an image.')
     if (body.length > MAX_DRAFT_CHARS) throw new ValidationError(`Drafts can be up to ${MAX_DRAFT_CHARS.toLocaleString()} characters.`)
     const hashtags = this.cleanHashtags(input.hashtags ?? existing?.hashtags ?? [])
+    const comment = input.comment === undefined ? (existing?.comment ?? NO_COMMENT) : this.checkComment(input.comment)
     if (input.accountId && !this.exists('accounts', input.accountId)) throw new ValidationError('That account no longer exists.')
     const sourceGenerationId = input.sourceGenerationId === undefined ? (existing?.sourceGenerationId ?? null) : input.sourceGenerationId
     if (sourceGenerationId && !this.exists('generations', sourceGenerationId)) throw new ValidationError('That generation no longer exists.')
@@ -57,6 +59,7 @@ export class DraftService {
           status: input.status ?? existing.status,
           origin: existing.origin === 'ai' || input.aiAssisted ? 'ai' : 'manual',
           sourceGenerationId,
+          comment,
           updatedAt: now
         }
       : {
@@ -68,6 +71,7 @@ export class DraftService {
           origin: input.aiAssisted || sourceGenerationId ? 'ai' : 'manual',
           sourceGenerationId,
           media: [],
+          comment,
           createdAt: now,
           updatedAt: now
         }
@@ -118,6 +122,15 @@ export class DraftService {
     await this.repositories.drafts.remove(id)
     await this.recordActivity('Draft deleted', draft)
     this.log.info(`Deleted draft ${id.slice(0, 8)}`)
+  }
+
+  /** The comment saved with the post: a turned-off comment keeps its text; a turned-on one must be postable. */
+  private checkComment(comment: PostComment): PostComment {
+    const text = comment.text.trim()
+    if (text.length > MAX_DRAFT_CHARS) throw new ValidationError(`Comments can be up to ${MAX_DRAFT_CHARS.toLocaleString()} characters.`)
+    const blocking = commentProblems({ enabled: comment.enabled, text }).find((p) => p.blocking)
+    if (blocking) throw new ValidationError(blocking.message)
+    return { enabled: comment.enabled && Boolean(text), text }
   }
 
   /** Applies X's verified attachment rules (see shared/config/mediaLimits.ts). */

@@ -40,34 +40,34 @@ export const NAV_ITEMS: Record<RouteId, NavItem> = {
   accounts: {
     id: 'accounts',
     path: '/accounts',
-    label: 'Accounts & Profiles',
-    description: 'X accounts and their IX Browser profiles',
+    label: 'Synchronized Profiles',
+    description: 'Sync your IX Browser profiles — each one is linked to an account automatically and used by Create Post and Campaigns',
     icon: UsersRound,
-    keywords: ['profiles', 'ix browser', 'handles', 'users']
+    keywords: ['profiles', 'sync', 'ix browser', 'accounts', 'handles', 'users', 'proxies']
   },
   create: {
     id: 'create',
     path: '/create',
     label: 'Create Post',
-    description: 'Write a post yourself or with AI, add an image, then publish it or save it for a campaign',
+    description: 'Write a post yourself or with AI, add images and a comment, then publish it now, schedule it, or save it for a campaign',
     icon: SquarePen,
-    keywords: ['write', 'compose', 'draft', 'ai', 'generate', 'manual', 'image', 'publish', 'tweet', 'post']
+    keywords: ['write', 'compose', 'draft', 'ai', 'generate', 'manual', 'image', 'comment', 'reply', 'publish', 'schedule', 'tweet', 'post']
   },
   campaigns: {
     id: 'campaigns',
     path: '/campaigns',
-    label: 'Campaign Automation',
-    description: 'Choose saved posts and accounts, set the schedule, and start, pause or stop campaigns',
+    label: 'Campaigns',
+    description: 'Post saved posts from every synchronized profile now or at a date and time, and follow the results',
     icon: Workflow,
-    keywords: ['campaign', 'automation', 'schedule', 'start', 'pause', 'stop', 'queue', 'recurring', 'days', 'interval']
+    keywords: ['campaign', 'automation', 'schedule', 'start', 'pause', 'stop', 'queue', 'repost', 'comment', 'results']
   },
   // Merged pages: their old addresses lead to the page that now holds them (not shown in navigation).
   generator: { id: 'generator', path: '/create?mode=ai', label: 'Create Post', description: 'Generate a post with AI', icon: Sparkles, keywords: [] },
   posts: { id: 'posts', path: '/create', label: 'Create Post', description: 'Write and edit posts', icon: FileText, keywords: [] },
-  automation: { id: 'automation', path: '/campaigns', label: 'Campaign Automation', description: 'Campaigns', icon: Workflow, keywords: [] },
-  schedules: { id: 'schedules', path: '/campaigns', label: 'Campaign Automation', description: 'Recurring campaigns', icon: CalendarRange, keywords: [] },
-  scheduler: { id: 'scheduler', path: '/campaigns?view=queue', label: 'Campaign Automation', description: 'Scheduled posts', icon: CalendarClock, keywords: [] },
-  queue: { id: 'queue', path: '/campaigns?view=queue', label: 'Campaign Automation', description: 'Posting queue', icon: ListChecks, keywords: [] },
+  automation: { id: 'automation', path: '/campaigns', label: 'Campaigns', description: 'Campaigns', icon: Workflow, keywords: [] },
+  schedules: { id: 'schedules', path: '/campaigns', label: 'Campaigns', description: 'Recurring campaigns', icon: CalendarRange, keywords: [] },
+  scheduler: { id: 'scheduler', path: '/campaigns?view=queue', label: 'Campaigns', description: 'Scheduled posts', icon: CalendarClock, keywords: [] },
+  queue: { id: 'queue', path: '/campaigns?view=queue', label: 'Campaigns', description: 'Posting queue', icon: ListChecks, keywords: [] },
   links: {
     id: 'links',
     path: '/links',
@@ -87,8 +87,8 @@ export const NAV_ITEMS: Record<RouteId, NavItem> = {
 }
 
 export const NAV_GROUPS: NavGroup[] = [
-  { label: 'Workspace', items: [NAV_ITEMS.dashboard, NAV_ITEMS.accounts] },
-  { label: 'Automation', items: [NAV_ITEMS.create, NAV_ITEMS.campaigns] },
+  { label: 'Workspace', items: [NAV_ITEMS.dashboard] },
+  { label: 'Automation', items: [NAV_ITEMS.create, NAV_ITEMS.campaigns, NAV_ITEMS.accounts] },
   { label: 'Insights', items: [NAV_ITEMS.links] }
 ]
 

@@ -3,16 +3,25 @@
 Windows desktop workspace for managing X accounts, drafts, scheduling and automation.
 Built with Electron, React, TypeScript, Vite (electron-vite) and Tailwind CSS.
 
-**Status: Phase 12, not fully verified.** Automation lives in two tabs:
-- **Create Post:** write a post yourself or with AI (AI Post / Manual Post), add images, preview and
-  edit it, then **Publish now** to all or selected accounts (with live progress), or **Use in a
-  campaign**.
-- **Campaign Automation:** choose **Post**, **Repost** or **Comment**, **All** or **selected**
-  profiles, the content, and a run time (now or later), then **Start campaign**. It shows Running,
-  Completed or Failed, with a result for each profile and action. Reposts and comments are tasks you
-  complete yourself, one account per post, never the same comment from two of your accounts.
+**Status: Phase 12, not fully verified.** Automation lives in three pages, and no page asks you to
+pick accounts:
+- **Synchronized Profiles:** **Sync profiles** links every available IX Browser profile to an account
+  automatically, with no duplicates on later syncs. Each profile shows whether it can post
+  (Connected, Disabled, Disconnected, Link failed, Unavailable). You can disconnect a profile and
+  connect it again.
+- **Create Post:** write a post yourself or with AI (AI Post / Manual Post) and add images.
+  Optionally add a **comment**, which each account posts as a reply to its own post once X confirms
+  the post. Then **Publish now** or **Schedule** it on every synchronized profile that can post, with
+  live progress for posts and comments, or **Use in a campaign**.
+- **Campaigns:** choose **Post**, **Repost** or **Comment**, the content, and a run time (now, or any
+  later date and time), then **Start campaign**.
+  - Every eligible synchronized profile takes part; the backend decides which when the campaign
+    starts.
+  - The campaign shows Running, Completed or Failed, with a result for each profile, post and comment.
+  - Reposts and comments on Post Links are tasks you complete yourself: one account per post, never
+  the same comment from two of your accounts.
 
-Dashboard, Accounts & Profiles, Post Links and Settings are unchanged.
+Dashboard, Post Links and Settings are unchanged.
 See [docs/automation.md](docs/automation.md).
 Phases 8–11 added:
 - Scheduling and publishing through IX Browser profiles with a crash-safe task queue
@@ -303,7 +312,8 @@ retried or rotated automatically. Passwords live in the OS-encrypted vault (migr
 
 ### Scheduling, queue & publishing (Phase 8)
 
-Posts are published now (from Create Post) or scheduled by campaigns (Campaign Automation). A
+Posts are published now or scheduled from Create Post, or by campaigns (Campaigns), always from every
+eligible synchronized profile. A post's comment follows it as a reply from the same account. A
 persistent SQLite queue runs one post at a time (one per account, with spacing), recovers after
 restarts, and retries only failures that happened before anything was submitted. The Python
 engine posts in the profile's own signed-in session through IX Browser and confirms the post from
@@ -317,18 +327,20 @@ exported. Engagement tasks are a checklist the user acts on — X Auto never lik
 replies or follows by itself — with guardrails against self-amplification and coordinated
 engagement. [docs/engagement.md](docs/engagement.md).
 
-### Create Post and Campaign Automation (Phase 12)
+### Create Post and Campaigns (Phase 12)
 
 **Create Post** combines AI generation and manual writing in one editor, with images (upload,
-library or generated), a preview, and publishing to all or selected accounts.
+library or generated), an optional comment posted as a reply to the post, a preview, and publishing
+now or at a date and time from every synchronized profile.
 
-**Campaign Automation** schedules saved posts across accounts on the existing automation runs and
-publishing queue, so every post is verified. Repost, comment and like tasks are planned for the
-user, never performed automatically. Details: [docs/automation.md](docs/automation.md).
+**Campaigns** post saved posts (and their comments) across every eligible synchronized profile on the
+existing automation runs and publishing queue, so every post and comment is verified. Repost,
+comment and like tasks on other people's posts are planned for the user, never performed
+automatically. Details: [docs/automation.md](docs/automation.md).
 
 ### Automation controls, usage & backups (Phases 10–11)
 
-Pause / resume / stop now and per-task hold in the posting queue (Campaign Automation); plain-language notifications only
+Pause / resume / stop now and per-task hold in the posting queue (Campaigns); plain-language notifications only
 (no log screen); usage & cost tracking with user-entered rates and optional limits; one-file
 verified backups (database + images) with automatic schedules and safe restore.
 [docs/operations.md](docs/operations.md).

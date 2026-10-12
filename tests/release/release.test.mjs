@@ -4,9 +4,9 @@
 //   node tests/release/release.test.mjs
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import yaml from 'js-yaml'
 import { collectArtifacts, compareVersions, expectedAssets, mergeMacMetadata, prepareRelease, signatureProblem, updateChannel, verifyRemoteRelease } from '../../scripts/release-assets.mjs'
@@ -152,7 +152,7 @@ rmSync(dir, { recursive: true, force: true })
 // ── combining the per-build artifact folders ──
 {
   const parts = mkdtempSync(join(tmpdir(), 'axora-parts-'))
-  const out = join(parts, '..', `${parts.split('/').pop()}-out`)
+  const out = join(parts, '..', `${basename(parts)}-out`)
   mkdirSync(join(parts, 'x-auto-macos-arm64'))
   mkdirSync(join(parts, 'x-auto-macos-x64'))
   writeFileSync(join(parts, 'x-auto-macos-arm64', `X-Auto-${v}-macos-arm64.zip`), 'arm')
@@ -217,7 +217,8 @@ const scratch = mkdtempSync(join(tmpdir(), 'axora-relcmd-'))
 mkdirSync(join(scratch, 'scripts'))
 cpSync(join(root, 'scripts/release.mjs'), join(scratch, 'scripts/release.mjs'))
 cpSync(join(root, 'scripts/release-assets.mjs'), join(scratch, 'scripts/release-assets.mjs'))
-symlinkSync(join(root, 'node_modules'), join(scratch, 'node_modules'), 'dir')
+// The release scripts' only package (and its dependency), copied: symlinks need extra rights on Windows.
+for (const name of ['js-yaml', 'argparse']) cpSync(join(root, 'node_modules', name), join(scratch, 'node_modules', name), { recursive: true })
 // Unusual but valid formatting: a byte-exact restore must keep it, a re-serialisation would not.
 const pkg = '{\n    "name": "scratch-app",\n    "version": "0.5.0",\n    "private": true,\n    "type": "module"\n}'
 const lock = '{\n    "name": "scratch-app",\n    "version": "0.5.0",\n    "lockfileVersion": 3,\n    "requires": true,\n    "packages": {\n        "": {\n            "name": "scratch-app",\n            "version": "0.5.0"\n        }\n    }\n}'
