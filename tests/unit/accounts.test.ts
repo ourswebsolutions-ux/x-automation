@@ -48,7 +48,7 @@ fresh(path)
 }
 {
   const db = new SqliteDatabase(path).open()
-  check('migrate v2 → v13 (via 003 account rebuild)', migrate(db, log) === 13)
+  check('migrate v2 → v14 (via 003 account rebuild)', migrate(db, log) === 14)
   check('foreign_keys re-enabled after migration', db.pragma<number>('foreign_keys') === 1)
   check('foreign_key_check clean', db.all('PRAGMA foreign_key_check').length === 0)
   const rows = db.all<Record<string, unknown>>('SELECT * FROM accounts ORDER BY id')
@@ -63,7 +63,7 @@ fresh(path)
   check('a4 valid handle kept as unverified, unlinked, enabled', by.a4?.handle === 'plain' && by.a4?.identity === 'unverified' && by.a4?.browser_profile_id === null && by.a4?.enabled === 1)
   check('drafts/tasks/schedules/post links untouched', db.get<{ n: number }>("SELECT (SELECT COUNT(*) FROM drafts WHERE account_id='a2') + (SELECT COUNT(*) FROM tasks WHERE account_id='a3') + (SELECT COUNT(*) FROM scheduled_posts WHERE account_id='a1') + (SELECT COUNT(*) FROM post_links WHERE account_id='a1') AS n")?.n === 4)
   check('browser profiles untouched', db.get<{ n: number }>('SELECT COUNT(*) n FROM browser_profiles')?.n === 2)
-  check('migrate idempotent at v13', migrate(db, log) === 13)
+  check('migrate idempotent at v14', migrate(db, log) === 14)
   check(
     'UNIQUE profile constraint enforced',
     errName(() => db.run("UPDATE accounts SET browser_profile_id='bp1', linked_at='x' WHERE id='a4'")).includes('constraint failed')
@@ -79,7 +79,7 @@ fresh(path)
 // ── 2. AccountService behaviour on a fresh database ─────────────────────────
 fresh(path)
 const db = new SqliteDatabase(path).open()
-check('fresh migrate → v13', migrate(db, log) === 13)
+check('fresh migrate → v14', migrate(db, log) === 14)
 const profiles = new ProfileRepository(db)
 const repo = new AccountRepository(db)
 let listener: ((e: unknown[]) => void) | null = null

@@ -52,8 +52,8 @@ const errOf = async (p: Promise<unknown> | (() => unknown)) => {
 const file = process.argv[2]!
 for (const s of ['', '-wal', '-shm']) rmSync(file + s, { force: true })
 const db = new SqliteDatabase(file).open()
-check('migrate → v13', migrate(db, log as never) === 13)
-check('v13 columns exist', ['comment_text', 'comment_enabled'].every((c) => db.all<{ name: string }>("PRAGMA table_info('drafts')").some((r) => r.name === c)) && db.all<{ name: string }>("PRAGMA table_info('browser_profiles')").some((r) => r.name === 'link_excluded_at'))
+check('migrate → v14', migrate(db, log as never) === 14)
+check('v14 columns exist', ['comment_text', 'comment_enabled'].every((c) => db.all<{ name: string }>("PRAGMA table_info('drafts')").some((r) => r.name === c)) && db.all<{ name: string }>("PRAGMA table_info('browser_profiles')").some((r) => r.name === 'link_excluded_at'))
 
 const mock = await startMock()
 mock.state.profiles = mock.state.profiles.slice(0, 6) // Profile 001 … Profile 006

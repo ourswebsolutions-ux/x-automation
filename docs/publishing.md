@@ -28,10 +28,13 @@
 | --- | --- |
 | Failed before the Post button was clicked (profile would not open, engine/CDP connection failed, composer did not load, upload did not finish) | Safe: retried automatically with backoff (1, 5, 15 min) up to *attempts* (default 3) |
 | Signed out of X, a different account signed in, the composer did not take the text exactly, Post button disabled | Failed, nothing posted, not retried |
+| Something covers the Post button (e.g. X's hashtag/mention suggestions after a trailing `#tag`) | The suggestions are closed first (a trailing space). The button must pass a *trial click* (Playwright's actionability checks, no click) before anything counts as submitted; if it stays covered: retried safely, never *needs review* |
 | Post clicked, X confirmed with a post link | Published; link saved |
+| Post clicked, no notice, but X's composer still holds the whole text | Failed ("X did not take the post"), nothing posted; you can retry |
+| Post clicked, no notice, X closed the composer | The engine looks for the exact text among the newest posts of the signed-in account (handle read from X's side navigation; no confirmed username needed). **Found:** published, *verified by profile check*, link saved. **Not found:** needs review, with what was checked |
 | Post clicked, X showed a notice without a post link | Failed ("X did not accept the post"), not retried |
 | Post clicked, no confirmation in 45 s, and the account's username is confirmed | **Profile check** (Phase 12): the engine opens `x.com/<username>` and looks for the exact text among the latest posts. **Found:** published, with the link saved and the result marked *verified by profile check*. **Not found, or the check failed:** needs review (below) |
-| Post clicked, no confirmation and no profile check possible; engine crashed or timed out after the click; app closed during a publish | **Needs review**, never retried. The user checks X and marks it *posted* (optionally with its link) or *not posted* (and may then retry) |
+| Post clicked, no confirmation and no profile check possible; engine crashed or timed out after the click; app closed during a publish | **Needs review**, never retried. The user checks X and marks it *posted* — **only with the post's link** (for a confirmed username, a link by that account) — or *not posted* (and may then retry). A claim without a link can't complete a post or a campaign |
 
 **One post from every synchronized profile:**
 - **Publish…** in Create Post publishes now or schedules the post from every eligible account: an

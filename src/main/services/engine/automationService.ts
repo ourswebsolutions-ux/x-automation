@@ -95,15 +95,10 @@ export class AutomationService {
       }
 
       let address = this.deps.ixBrowser.debuggingAddressFor(profile.externalId)
-      if (profile.runState === 'running' && !address) {
-        add('debugging-address', false, 'The profile is already open, but it was not opened by X Auto in this session, so its debugging address is unknown.')
-        result.blocker = 'This profile is open in IX Browser but wasn’t opened by X Auto. Close it there, then run the check again.'
-        return result
-      }
       if (!address) {
         const started = Date.now()
         try {
-          await this.deps.ixBrowser.openProfile(profile.externalId)
+          await this.deps.ixBrowser.openProfile(profile.externalId, { evenIfListedOpen: true })
           openedHere = true
           add('profile-open', true, 'Opened through the IX Browser Local API (profile-open).', Date.now() - started)
         } catch (error) {

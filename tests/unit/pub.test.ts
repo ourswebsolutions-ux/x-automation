@@ -14,6 +14,7 @@ import { QueueRepository } from '../../src/main/services/database/sqlite/queueRe
 import { ScheduleRepository } from '../../src/main/services/database/sqlite/scheduleRepository'
 import { DraftService } from '../../src/main/services/drafts/draftService'
 import { EngineError } from '../../src/main/services/engine/engineService'
+import { IxBrowserError } from '../../src/main/services/integrations/ixbrowser/client'
 import { Notifier } from '../../src/main/services/notifications/notifier'
 import { PublishHandler } from '../../src/main/services/publishing/publishHandler'
 import { PublishingService } from '../../src/main/services/publishing/publishingService'
@@ -53,7 +54,7 @@ const waitFor = async (fn: () => boolean, ms = 4000) => {
 const file = process.argv[2]!
 rmSync(file, { force: true })
 const db = new SqliteDatabase(file).open()
-check('migrate → v13', migrate(db, log as never) === 13)
+check('migrate → v14', migrate(db, log as never) === 14)
 const at = new Date().toISOString()
 db.exec(`INSERT INTO browser_profiles (id, external_id, name, synced_at, first_seen_at, availability, run_state) VALUES
   ('bp1','101','Alpha','${at}','${at}','available','closed'),('bp2','102','Beta','${at}','${at}','available','closed'),('bp3','103','Gamma','${at}','${at}','available','running')`)
@@ -263,8 +264,31 @@ const e5 = await publishing.publishNow({ draftId: d5.id, accountId: MAIN })
 const t5 = taskFor(e5.schedule.id)
 check('engine crash after the submit step → review (not retry)', await waitFor(() => task(t5).status === 'needs-review'), task(t5)?.status)
 check('invalid link refused', (await errOf(() => publishing.resolveReview({ taskId: t5, outcome: 'posted', url: 'https://example.com/x' }))).includes('not a link to a post'))
+// Regression: "posted" without the post's link completed campaigns for posts that never existed.
+check('"posted" without a link refused — the link is the evidence', (await errOf(() => publishing.resolveReview({ taskId: t5, outcome: 'posted', url: null }))).includes('Paste the link') && task(t5).status === 'needs-review')
+check('"posted" with a link to another account’s post refused (confirmed username)', (await errOf(() => publishing.resolveReview({ taskId: t5, outcome: 'posted', url: 'https://x.com/someone_else/status/43' }))).includes('not @relay_main') && task(t5).status === 'needs-review')
 publishing.resolveReview({ taskId: t5, outcome: 'posted', url: 'https://twitter.com/relay_main/status/42' })
 check('resolved "posted" with link → published + link saved', task(t5).status === 'succeeded' && task(t5).result?.verifiedBy === 'user' && postLinks.byUrlOrPostId('https://x.com/relay_main/status/42', '42') !== null && (await draftStatus(d5.id)) === 'published')
+
+// ── outcomes the engine now tells apart (regression: a click that never happened was "submitted") ──
+const dBlocked = await draft('Button covered')
+engine.script = [failWith('POST_BUTTON_BLOCKED', { submitted: false, upTo: 'write' }), failWith('POST_BUTTON_BLOCKED', { submitted: false, upTo: 'write' }), failWith('POST_BUTTON_BLOCKED', { submitted: false, upTo: 'write' })]
+const tBlocked = taskFor((await publishing.publishNow({ draftId: dBlocked.id, accountId: MAIN })).schedule.id)
+check('Post button covered → retried safely, then failed — never "needs review"', await waitFor(() => task(tBlocked).status === 'failed') && queue.details(tBlocked).runs.length === 3 && queue.details(tBlocked).runs.every((r) => r.status === 'failed') && (task(tBlocked).error ?? '').includes('never clicked'), `${task(tBlocked)?.status} ${task(tBlocked)?.error}`)
+const dIgnored = await draft('X ignored the click')
+engine.script = [failWith('NOT_SENT', { submitted: true, upTo: 'confirm' })]
+const tIgnored = taskFor((await publishing.publishNow({ draftId: dIgnored.id, accountId: MAIN })).schedule.id)
+check('X kept the text in its composer → failed "not posted" (retry allowed), not review', await waitFor(() => task(tIgnored).status === 'failed') && (task(tIgnored).error ?? '').includes('Nothing was posted') && (await errOf(() => publishing.retryTask(tIgnored))) === 'none', task(tIgnored)?.error ?? '')
+await waitFor(() => task(tIgnored).status === 'succeeded')
+const dFound = await draft('Found by the engine on the profile')
+engine.script = [async (_p, progress) => { for (const s of ['attach', 'open-composer', 'write', 'submit', 'confirm', 'check-profile']) progress(s); return { url: 'https://x.com/relay_main/status/1799999999999990001', postId: '1799999999999990001', handle: 'relay_main', accountCheck: 'match', verifiedBy: 'profile-check' } }]
+const tFound = taskFor((await publishing.publishNow({ draftId: dFound.id, accountId: MAIN })).schedule.id)
+check('no X notice, found on the profile by the engine → published, recorded as profile-check, with its link', await waitFor(() => task(tFound).status === 'succeeded') && task(tFound).result?.verifiedBy === 'profile-check' && postLinks.byTask(tFound)?.postId === '1799999999999990001')
+const dUnsure = await draft('Really unknown')
+engine.script = [async (_p, progress) => { for (const s of ['attach', 'open-composer', 'write', 'submit', 'confirm', 'check-profile']) progress(s); throw new EngineError('OUTCOME_UNKNOWN', 'X showed no confirmation and closed the composer, and the post is not among the latest posts on @relay_main yet.', false, true) }]
+const tUnsure = taskFor((await publishing.publishNow({ draftId: dUnsure.id, accountId: MAIN })).schedule.id)
+check('still ambiguous → needs review, with what the engine saw', await waitFor(() => task(tUnsure).status === 'needs-review') && (task(tUnsure).error ?? '').includes('closed the composer'), task(tUnsure)?.error ?? '')
+publishing.resolveReview({ taskId: tUnsure, outcome: 'not-posted' })
 
 // crash before the submit step is safe to retry
 const d6 = await draft('Crash early')
@@ -309,11 +333,19 @@ const t11 = taskFor((await publishing.publishNow({ draftId: d11.id, accountId: M
 await waitFor(() => task(t11).status === 'succeeded')
 check('different handle in the post link → success + warning notice', notices.some((n) => n.title === 'Posted from a different account'))
 
-// ── profile open in IX Browser but not by us → retry later ──
+// ── profile listed by IX as opened, but not by us: IX's opened-list is team-wide (who opened it last,
+// possibly days ago elsewhere), so IX is asked to open it anyway — and its own refusal is shown ──
 const d12 = await draft('Profile busy')
+const open12 = ix.openProfile
+const asked12: unknown[] = []
+ix.openProfile = async function (_ext: number, options?: unknown) {
+  asked12.push(options)
+  throw new IxBrowserError('api', 'The profile is already open', '', 2012)
+}
 const t12 = taskFor((await publishing.publishNow({ draftId: d12.id, accountId: BUSY })).schedule.id)
-check('profile opened elsewhere → safe retry with guidance', await waitFor(() => task(t12).status === 'failed' && queue.details(t12).runs.length === 3), `${task(t12)?.status} ${queue.details(t12).runs.length}`)
-check('… message tells the user what to do', (task(t12).error ?? '').includes('Close it there'))
+check('profile listed as opened → IX is still asked to open it, retried safely', await waitFor(() => task(t12).status === 'failed' && queue.details(t12).runs.length === 3) && asked12.length === 3 && asked12.every((o) => (o as { evenIfListedOpen?: boolean })?.evenIfListedOpen === true), `${task(t12)?.status} ${queue.details(t12).runs.length} ${JSON.stringify(asked12)}`)
+check('… IX Browser’s own reason is shown, with what to do', (task(t12).error ?? '').includes('IX Browser says: The profile is already open (code 2012)') && (task(t12).error ?? '').includes('close it in IX Browser'), task(t12).error ?? '')
+ix.openProfile = open12
 
 // ── cancel ──
 const d13 = await draft('Cancel me')

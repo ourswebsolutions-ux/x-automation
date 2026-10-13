@@ -55,6 +55,8 @@ export class Logger {
   private readonly listeners = new Set<Listener>()
   private store: LogRepository | null = null
   private fallbackId = -1
+  /** Development: every entry is also printed to the terminal running `npm run dev` (already redacted). */
+  private readonly echo = Boolean(process.env['ELECTRON_RENDERER_URL'])
 
   scope(scope: string) {
     return {
@@ -87,6 +89,7 @@ export class Logger {
     }
     const id = this.store ? this.persist(base) : (this.pending.push(base), this.fallbackId--)
     const entry: LogEntry = { ...base, id }
+    if (this.echo) console.log(`[${base.at.slice(11, 19)}] ${level.toUpperCase().padEnd(7)} ${base.scope}: ${base.message}${base.meta && Object.keys(base.meta).length ? ` ${JSON.stringify(base.meta)}` : ''}`)
     this.recent.push(entry)
     if (this.recent.length > BUFFER_SIZE) this.recent.shift()
     this.listeners.forEach((listener) => listener(entry))

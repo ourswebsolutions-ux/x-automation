@@ -66,8 +66,19 @@ export function createMainWindow(saved: SavedWindowState | null): BrowserWindow 
   })
 
   const devServer = process.env['ELECTRON_RENDERER_URL']
-  if (devServer) void window.loadURL(devServer)
-  else void window.loadFile(join(import.meta.dirname, '../renderer/index.html'))
+  if (devServer) {
+    void window.loadURL(devServer)
+    // Development only (npm run dev): DevTools opens with the app; F12 or Ctrl+Shift+I toggles it.
+    // Packaged builds never load the dev server, so this never applies to installed copies.
+    window.webContents.once('did-finish-load', () => window.webContents.openDevTools({ mode: 'detach' }))
+    window.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return
+      if (input.key === 'F12' || ((input.control || input.meta) && input.shift && input.key.toLowerCase() === 'i')) {
+        event.preventDefault()
+        window.webContents.toggleDevTools()
+      }
+    })
+  } else void window.loadFile(join(import.meta.dirname, '../renderer/index.html'))
 
   return window
 }

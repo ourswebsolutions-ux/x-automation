@@ -75,6 +75,33 @@ function commentState(c: NonNullable<RunItem['comment']>, post: RunItem): { labe
   }
 }
 
+/** Each selected post across all accounts: how many of its copies are published, waiting, publishing or failed. */
+function PerPost({ items }: { items: RunItem[] }) {
+  const groups = new Map<string, RunItem[]>()
+  for (const i of items) if (i.kind === 'post' && i.sourceDraftId && i.status !== 'removed') groups.set(i.sourceDraftId, [...(groups.get(i.sourceDraftId) ?? []), i])
+  if (groups.size === 0 || [...groups.values()].every((g) => g.length < 2)) return null
+  return (
+    <ul className="flex flex-col divide-y divide-line rounded-md border border-line" aria-label="Results per post">
+      {[...groups.entries()].map(([id, group]) => {
+        const label = (i: RunItem) => itemState(i).label
+        const n = (l: string) => group.filter((i) => label(i) === l).length
+        const failed = n('Failed') + n('Needs review')
+        return (
+          <li key={id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+            <span className="min-w-0 flex-1 truncate text-fg">{group[0]!.text ?? 'Post'}</span>
+            <span className="tabular text-xs text-fg-subtle">
+              Published on {n('Published')} of {group.length} {group.length === 1 ? 'account' : 'accounts'}
+              {n('Publishing') ? ` · ${n('Publishing')} publishing` : ''}
+              {n('Scheduled') + n('Waiting') ? ` · ${n('Scheduled') + n('Waiting')} waiting` : ''}
+              {failed ? ` · ${failed} failed or to review` : ''}
+            </span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 /** A run: progress, Pause / Resume / Stop, mode switch, and every post with its preview. */
 export function RunPanel({ runId }: { runId: string }) {
   const toast = useToast()
@@ -154,6 +181,8 @@ export function RunPanel({ runId }: { runId: string }) {
           Approve all {waiting.length}
         </Button>
       )}
+
+      <PerPost items={items} />
 
       <ul className="flex flex-col divide-y divide-line rounded-md border border-line" aria-label="Results per profile">
         {items

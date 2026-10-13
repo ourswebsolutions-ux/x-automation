@@ -25,6 +25,8 @@ export interface IxClientOptions {
   timeoutMs: number
   retries: number
   fetchImpl?: typeof fetch
+  /** Called after every request: action, milliseconds, and the error (kind, code, message) if it failed. Never the body. */
+  onCall?: (action: string, ms: number, error: { kind: string; code: number | null; message: string } | null) => void
 }
 
 /** Actions that read state and are safe to repeat. open/close are never retried. */
@@ -149,10 +151,14 @@ export class IxBrowserHttpClient {
     const attempts = READ_ONLY.has(action) ? this.options.retries + 1 : 1
     let lastError: IxBrowserError | null = null
     for (let attempt = 1; attempt <= attempts; attempt++) {
+      const started = Date.now()
       try {
-        return await this.once(action, body, signal)
+        const data = await this.once(action, body, signal)
+        this.options.onCall?.(action, Date.now() - started, null)
+        return data
       } catch (error) {
         lastError = error as IxBrowserError
+        this.options.onCall?.(action, Date.now() - started, { kind: lastError.kind, code: lastError.code ?? null, message: lastError.message })
         const transient = lastError.kind === 'unreachable' || lastError.kind === 'timeout' || (lastError.kind === 'http' && (lastError.code ?? 0) >= 500)
         if (!transient || attempt === attempts) throw lastError
         await wait(250 * 2 ** (attempt - 1), signal)

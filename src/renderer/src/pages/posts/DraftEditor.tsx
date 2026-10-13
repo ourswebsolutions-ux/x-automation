@@ -212,6 +212,45 @@ export function DraftEditor(props: DraftEditorProps) {
           className="min-h-40 text-base"
         />
 
+        <section aria-label="Comment" className="flex flex-col gap-2.5 rounded-md border border-line bg-surface-1/40 px-3.5 py-3">
+          <div className="flex items-center gap-2">
+            <MessageSquareReply size={14} className="text-fg-subtle" />
+            <h3 className="text-sm font-medium text-fg">Comment</h3>
+            <span className="text-xs text-fg-subtle">Optional · posted as a reply to this post</span>
+            <span className="flex-1" />
+            <Switch
+              checked={value.comment.enabled}
+              disabled={!editable}
+              onChange={(enabled) => set({ comment: { ...value.comment, enabled } })}
+              aria-label="Post a comment under this post"
+            />
+          </div>
+          {value.comment.enabled && (
+            <>
+              <Textarea
+                value={value.comment.text}
+                disabled={!editable}
+                rows={3}
+                placeholder="Add a comment to your post (for example a link or more detail)"
+                aria-label="Comment text"
+                invalid={commentBlocked}
+                onChange={(e) => set({ comment: { ...value.comment, text: e.target.value } })}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="min-w-0 flex-1 text-xs text-fg-subtle">
+                  Each profile that posts this replies to its own post with this comment, right after X confirms the post. It is never posted on anyone else’s post.
+                </span>
+                <LengthMeter length={commentLength} />
+              </div>
+              {comment.map((p) => (
+                <p key={p.code} role={p.blocking ? 'alert' : undefined} className={cn('text-xs', p.blocking ? 'text-danger' : 'text-warning')}>
+                  {p.message}
+                </p>
+              ))}
+            </>
+          )}
+        </section>
+
         <Field label="Hashtags" htmlFor="draft-hashtags" hint="Added on their own line when posted, unless the text already contains them.">
           <HashtagInput id="draft-hashtags" value={value.hashtags} disabled={!editable} onChange={(hashtags) => set({ hashtags })} />
         </Field>
@@ -243,45 +282,6 @@ export function DraftEditor(props: DraftEditorProps) {
           <LengthMeter length={length} />
         </div>
       </div>
-
-      <section aria-label="Comment" className="flex flex-col gap-2.5 border-t border-line px-4 py-3.5">
-        <div className="flex items-center gap-2">
-          <MessageSquareReply size={14} className="text-fg-subtle" />
-          <h3 className="text-sm font-medium text-fg">Comment</h3>
-          <span className="text-xs text-fg-subtle">Optional · posted as a reply to this post</span>
-          <span className="flex-1" />
-          <Switch
-            checked={value.comment.enabled}
-            disabled={!editable}
-            onChange={(enabled) => set({ comment: { ...value.comment, enabled } })}
-            aria-label="Post a comment under this post"
-          />
-        </div>
-        {value.comment.enabled && (
-          <>
-            <Textarea
-              value={value.comment.text}
-              disabled={!editable}
-              rows={3}
-              placeholder="Add a comment to your post (for example a link or more detail)"
-              aria-label="Comment text"
-              invalid={commentBlocked}
-              onChange={(e) => set({ comment: { ...value.comment, text: e.target.value } })}
-            />
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="min-w-0 flex-1 text-xs text-fg-subtle">
-                Each profile that posts this replies to its own post with this comment, right after X confirms the post. It is never posted on anyone else’s post.
-              </span>
-              <LengthMeter length={commentLength} />
-            </div>
-            {comment.map((p) => (
-              <p key={p.code} role={p.blocking ? 'alert' : undefined} className={cn('text-xs', p.blocking ? 'text-danger' : 'text-warning')}>
-                {p.message}
-              </p>
-            ))}
-          </>
-        )}
-      </section>
 
       {imageOpen && (
         <ImagePanel

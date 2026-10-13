@@ -148,7 +148,11 @@ export class IxBrowserService {
       endpoint: config.endpoint,
       timeoutMs: config.settings.timeoutMs,
       retries: config.settings.retries,
-      fetchImpl: this.deps.fetchImpl
+      fetchImpl: this.deps.fetchImpl,
+      onCall: (action, ms, error) =>
+        error
+          ? this.deps.log.warn(`IX Browser ${action} failed after ${ms} ms: ${error.message}`, { kind: error.kind, code: error.code })
+          : this.deps.log.debug(`IX Browser ${action} ok (${ms} ms)`)
     })
   }
 
@@ -348,15 +352,20 @@ export class IxBrowserService {
     return this.deps.profiles.list()
   }
 
-  openProfile(externalId: number): Promise<ProfileOperationResult> {
-    return this.operate(externalId, 'open')
+  /**
+   * evenIfListedOpen: IX Browser's profile-opened-list is a team-wide record (who opened a profile
+   * last, possibly days ago on another computer), so "running" there does not mean open here.
+   * Publishing asks IX to open the profile anyway, and IX answers for itself.
+   */
+  openProfile(externalId: number, options: { evenIfListedOpen?: boolean } = {}): Promise<ProfileOperationResult> {
+    return this.operate(externalId, 'open', options.evenIfListedOpen === true)
   }
 
   closeProfile(externalId: number): Promise<ProfileOperationResult> {
     return this.operate(externalId, 'close')
   }
 
-  private async operate(externalId: number, operation: ProfileOperation): Promise<ProfileOperationResult> {
+  private async operate(externalId: number, operation: ProfileOperation, evenIfListedOpen = false): Promise<ProfileOperationResult> {
     const config = this.requireConfig()
     const profile = this.deps.profiles.getByExternalId(externalId)
     if (!profile) throw new IxBrowserError('not-configured', 'That profile is not in the local list. Sync profiles first.', '')
@@ -367,7 +376,7 @@ export class IxBrowserService {
     if (inFlight) {
       throw new IxBrowserError('busy', `This profile is already being ${inFlight === 'open' ? 'opened' : 'closed'}.`, 'Wait for the current request to finish.')
     }
-    if (operation === 'open' && profile.runState === 'running') {
+    if (operation === 'open' && profile.runState === 'running' && !evenIfListedOpen) {
       throw new IxBrowserError('busy', 'This profile is already open.', 'Refresh status if the window was closed outside X Auto.')
     }
 

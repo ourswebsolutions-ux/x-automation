@@ -118,15 +118,54 @@ class PublishTests(unittest.TestCase):
         error = self.publish()["error"]
         self.assertEqual(error["code"], "REJECTED")
         self.assertTrue(error["submitted"])
+        self.assertIn("You already said that", error["message"], "X's own notice is kept")
         self.assertEqual(len(self.posts()), 1, "clicked exactly once")
 
-    def test_no_confirmation_is_an_unknown_outcome_never_a_success(self):
+    def test_no_notice_but_composer_closed_is_verified_on_the_profile(self):
+        # Without a confirmation notice, the engine checks the signed-in account's profile itself
+        # (no confirmed username needed: the handle is read from X's side navigation).
         self.fixture.set("silent")
+        reply = self.publish(confirmTimeoutMs=5000)
+        self.assertTrue(reply["ok"], reply)
+        posts = self.posts()
+        self.assertEqual(len(posts), 1, "clicked exactly once")
+        self.assertEqual(reply["result"]["verifiedBy"], "profile-check")
+        self.assertEqual(reply["result"]["postId"], posts[0]["id"])
+
+    def test_no_notice_and_not_on_the_profile_is_an_unknown_outcome_never_a_success(self):
+        self.fixture.set("silent-missing")
         error = self.publish(confirmTimeoutMs=5000)["error"]
         self.assertEqual(error["code"], "OUTCOME_UNKNOWN")
         self.assertTrue(error["submitted"])
         self.assertFalse(error["retryable"])
+        self.assertIn("@relay_test", error["message"], "says where it looked")
         self.assertEqual(len(self.posts()), 1, "clicked exactly once")
+
+    def test_hashtag_suggestions_covering_the_post_button_are_closed_first(self):
+        # Regression: text ending in "#tag" opens X's suggestion list over the Post button; the click
+        # never reached the button and the attempt was wrongly treated as submitted.
+        self.fixture.set("typeahead")
+        reply = self.publish(text="this for testing\n#testing", expectedHandle="relay_test")
+        self.assertTrue(reply["ok"], reply)
+        posts = self.posts()
+        self.assertEqual(len(posts), 1, "posted exactly once")
+        self.assertEqual(posts[0]["text"].split(), ["this", "for", "testing", "#testing"], "only a trailing space was added")
+        self.assertEqual(reply["result"]["verifiedBy"], "post-link")
+
+    def test_a_covered_post_button_is_never_clicked(self):
+        self.fixture.set("covered")
+        error = self.publish()["error"]
+        self.assertEqual(error["code"], "POST_BUTTON_BLOCKED")
+        self.assertFalse(error["submitted"], "not counted as submitted: the button was never clicked")
+        self.assertTrue(error["retryable"])
+        self.assertEqual(self.posts(), [])
+        self.assertNotIn("submit", [p["stage"] for p in self.engine.progress])
+
+    def test_a_click_x_ignores_is_reported_as_not_sent(self):
+        self.fixture.set("ignored")
+        error = self.publish(confirmTimeoutMs=5000)["error"]
+        self.assertEqual(error["code"], "NOT_SENT")
+        self.assertEqual(self.posts(), [], "X received nothing")
 
     def test_missing_media_file_is_refused_before_anything_happens(self):
         error = self.publish(media=[os.path.join(self.media_dir, "gone.png")])["error"]
@@ -150,6 +189,11 @@ class PublishTests(unittest.TestCase):
     def test_comment_keeps_every_safety_check(self):
         self.assertEqual(self.publish(text="A comment", inReplyTo="1900000000000000001", expectedHandle="someone_else")["error"]["code"], "ACCOUNT_MISMATCH")
         self.fixture.set("silent")
+        reply = self.publish(text="A comment", inReplyTo="1900000000000000001", confirmTimeoutMs=5000)
+        self.assertTrue(reply["ok"], reply)
+        self.assertEqual(reply["result"]["verifiedBy"], "profile-check", "found on the Replies tab")
+        self.fixture.reset()
+        self.fixture.set("silent-missing")
         error = self.publish(text="A comment", inReplyTo="1900000000000000001", confirmTimeoutMs=5000)["error"]
         self.assertEqual(error["code"], "OUTCOME_UNKNOWN")
         self.assertTrue(error["submitted"])
@@ -176,9 +220,10 @@ class FindPostTests(unittest.TestCase):
         self.engine.close()
 
     def submit_unconfirmed(self, mode):
+        # X shows no confirmation notice; whatever x.publish concluded, x.findPost is checked on its own.
         self.fixture.set(mode)
-        reply = self.engine.call("x.publish", {"endpoint": ENDPOINT, "text": TEXT, "baseUrl": self.fixture.base_url, "confirmTimeoutMs": 5000})
-        self.assertEqual(reply["error"]["code"], "OUTCOME_UNKNOWN")
+        self.engine.call("x.publish", {"endpoint": ENDPOINT, "text": TEXT, "baseUrl": self.fixture.base_url, "confirmTimeoutMs": 5000})
+        self.assertEqual(len(self.fixture.posts), 1)
 
     def find(self, text=TEXT, handle="relay_test", **extra):
         return self.engine.call("x.findPost", {"endpoint": ENDPOINT, "handle": handle, "text": text, "baseUrl": self.fixture.base_url, **extra})
@@ -203,8 +248,7 @@ class FindPostTests(unittest.TestCase):
 
     def test_finds_an_unconfirmed_comment_among_replies_only(self):
         self.fixture.set("silent")
-        reply = self.engine.call("x.publish", {"endpoint": ENDPOINT, "text": "An unconfirmed comment", "inReplyTo": "1900000000000000001", "baseUrl": self.fixture.base_url, "confirmTimeoutMs": 5000})
-        self.assertEqual(reply["error"]["code"], "OUTCOME_UNKNOWN")
+        self.engine.call("x.publish", {"endpoint": ENDPOINT, "text": "An unconfirmed comment", "inReplyTo": "1900000000000000001", "baseUrl": self.fixture.base_url, "confirmTimeoutMs": 5000})
         self.assertFalse(self.find(text="An unconfirmed comment")["result"]["found"], "replies are not on the posts tab")
         found = self.find(text="An unconfirmed comment", replies=True)["result"]
         self.assertTrue(found["found"])

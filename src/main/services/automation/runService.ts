@@ -694,6 +694,13 @@ export class RunService {
     for (const item of items.slice(0, MAX_BATCH)) {
       if (this.requireRun(runId).status !== 'generating') return 'stop'
       this.updateItem(item.id, { status: 'generating' })
+      // Resumed after a restart: this item already has its own post (and maybe its schedule). It is
+      // reused — copying it again would publish the same post twice from this account.
+      if (item.draft_id) {
+        made++
+        await this.afterDraft(config, this.rows(runId).find((i) => i.id === item.id)!)
+        continue
+      }
       // The first post of a draft uses the draft itself; any further one ("same") copies it.
       const built = this.rows(runId).find((i) => i.id !== item.id && i.source_draft_id === item.source_draft_id && i.draft_id)
       const outcome = await this.buildFromDraft(runId, config, item, built?.draft_id ?? null)
@@ -922,6 +929,13 @@ export class RunService {
 
   private async scheduleItem(config: AutomationConfig, item: ItemRow): Promise<void> {
     if (!item.draft_id || !item.account_id) throw new ValidationError('This post has no draft or account.')
+    // Once per post and account: a schedule this item's post already has (from before a restart) is
+    // kept instead of making another one.
+    const existing = this.deps.db.get<{ id: string }>(
+      "SELECT id FROM scheduled_posts WHERE draft_id = :draftId AND account_id = :accountId AND status <> 'cancelled' ORDER BY created_at DESC LIMIT 1",
+      { draftId: item.draft_id, accountId: item.account_id }
+    )
+    if (existing) return this.updateItem(item.id, { status: 'scheduled', schedule_id: existing.id, error: null })
     const due = item.run_at ? new Date(item.run_at) : this.now()
     const soon = due.getTime() <= this.now().getTime() + 60_000
     const entry = soon
@@ -1147,6 +1161,7 @@ export class RunService {
         accountLabel: (r.account_label as string) ?? null,
         draftId: (r.draft_id as string) ?? null,
         fromDraft: Boolean(r.source_draft_id),
+        sourceDraftId: (r.source_draft_id as string) ?? null,
         engagementStatus: r.kind === 'engagement' ? ((r.engagement_status as RunItem['engagementStatus']) ?? null) : null,
         text: r.kind === 'engagement' ? `${r.engagement_kind === 'reply' ? 'Comment on' : r.engagement_kind === 'repost' ? 'Repost' : 'Like'} ${String(r.engagement_url ?? '')}` : ((r.draft_body as string) ?? null),
         imageAssetId: (r.asset_id as string) ?? null,

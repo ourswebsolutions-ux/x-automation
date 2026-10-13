@@ -7,7 +7,9 @@ shows the publisher's logic works, not that x.com still matches.
 
 Control (JSON over HTTP, loopback only):
   POST /__control {"mode": ..., "handle": ...}   modes: ok, reject, silent, silent-missing, signed-out,
-                                                  no-composer, mangle, button-disabled, slow-upload
+                                                  no-composer, mangle, button-disabled, slow-upload,
+                                                  typeahead (suggestions cover Post while the text ends with #tag),
+                                                  ignored (Post does nothing), covered (something always covers Post)
   GET  /intent/post?in_reply_to=<id>              the reply composer (posts are recorded with inReplyTo)
   GET  /<handle>/with_replies                     that account's replies
   GET  /__posts                                   posts received so far
@@ -40,7 +42,23 @@ const button = document.querySelector('[data-testid="tweetButton"]');
 const input = document.querySelector('[data-testid="fileInput"]');
 const shelf = document.getElementById('attachments');
 let files = 0;
-function refresh(){ if (!button) return; button.disabled = mode === 'button-disabled' || !(box.innerText.trim() || files); }
+function refresh(){ if (!button) return; button.disabled = mode === 'button-disabled' || !(box.innerText.trim() || files); suggest(); }
+// Like X: while the last word is "#tag" or "@name", a suggestion list opens over the Post button.
+function cover(on, testid){
+  let el = document.getElementById('cover');
+  if (on && !el && button) {
+    const r = button.getBoundingClientRect();
+    el = document.createElement('div'); el.id = 'cover'; el.setAttribute('role', 'listbox');
+    if (testid) el.setAttribute('data-testid', testid);
+    el.style.cssText = `position:fixed;left:${r.left - 20}px;top:${r.top - 20}px;width:${r.width + 40}px;height:${r.height + 40}px;background:#fff;border:1px solid #888;z-index:10`;
+    el.textContent = '#suggestion';
+    document.body.appendChild(el);
+  } else if (!on && el) el.remove();
+}
+function suggest(){
+  if (mode === 'covered') return cover(true, null);
+  if (mode === 'typeahead') cover(/[#@][^\\s#@]+$/.test(box.innerText.replace(/\\n+$/, '')), 'typeaheadDropdown-1');
+}
 if (box) box.addEventListener('input', () => { if (mode === 'mangle' && box.innerText.length > 5) box.innerText = box.innerText.slice(0, 5); refresh(); });
 if (input) input.addEventListener('change', () => {
   const list = [...input.files];
@@ -51,9 +69,12 @@ if (input) input.addEventListener('change', () => {
   }, mode === 'slow-upload' ? 2500 : 300);
 });
 if (button) button.addEventListener('click', async () => {
+  if (mode === 'ignored') return;
   button.disabled = true;
   const res = await fetch('/__post', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({text: box.innerText, files, inReplyTo: "__REPLY_TO__" || null})});
   const post = await res.json();
+  // Like X, an accepted post closes the composer.
+  if (mode !== 'reject') document.querySelector('main').innerHTML = '<p>Home</p>';
   if (mode === 'silent' || mode === 'silent-missing') return;
   setTimeout(() => {
     const toast = document.createElement('div');

@@ -27,7 +27,7 @@ const errOfAsync = async (p: Promise<unknown>) => p.then(() => 'none', (e) => `$
 const file = process.argv[2]!
 rmSync(file, { force: true })
 const db = new SqliteDatabase(file).open()
-check('migrate → v13', migrate(db, log as never) === 13)
+check('migrate → v14', migrate(db, log as never) === 14)
 const at = new Date().toISOString()
 db.exec(`INSERT INTO browser_profiles (id, external_id, name, synced_at, first_seen_at, availability, run_state) VALUES
   ('bp1','101','Alpha','${at}','${at}','available','closed'),('bp2','102','Beta','${at}','${at}','available','closed'),('bp3','103','Gamma','${at}','${at}','available','running')`)
@@ -154,7 +154,7 @@ check('list + counts', eng.list({ status: 'open' }).length >= 5 && eng.counts().
 const opened = await eng.openInProfile(brandReply.id)
 check('open in profile: opens the profile via IX, then x.openPost with the post URL', !opened.signedOut && ix.opened.includes(102) && engineCalls.at(-1)?.cmd === 'x.openPost' && engineCalls.at(-1)?.url === 'https://x.com/brand_main/status/1001')
 const busyTask = eng.create({ linkIds: [otherPost], accountId: C, kind: 'reply', ...base }).created[0]!
-check('open in profile: profile open elsewhere → clear message, nothing opened', (await errOfAsync(eng.openInProfile(busyTask.id))).includes('not opened by X Auto'))
+check('open in profile: a profile IX lists as opened is still opened through IX (its list is team-wide)', (await errOfAsync(eng.openInProfile(busyTask.id))) === 'none' && engineCalls.at(-1)?.url === 'https://x.com/someone_else/status/1003', JSON.stringify(engineCalls.at(-1)))
 const followUp = eng.create({ linkIds: [otherPost], accountId: null, kind: 'follow-up', ...base }).created[0]!
 check('open in profile: needs an account', (await errOfAsync(eng.openInProfile(followUp.id))).includes('no account'))
 engineFail = 'CONNECT_FAILED'

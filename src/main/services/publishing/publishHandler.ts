@@ -76,6 +76,8 @@ interface PublishReply extends Record<string, unknown> {
   postId: string
   handle: string
   accountCheck: 'match' | 'unknown' | 'skipped'
+  /** post-link: X's notice · profile-check: the engine found it on the signed-in account's profile. */
+  verifiedBy?: 'post-link' | 'profile-check'
 }
 
 /**
@@ -140,15 +142,13 @@ export class PublishHandler implements TaskHandler {
     const externalId = account.profile.externalId
     let address = this.deps.ixBrowser.debuggingAddressFor(externalId)
     let openedHere = false
-    if (!address && account.profile.runState === 'running') {
-      throw new TaskError('PROFILE_OPEN_ELSEWHERE', 'The profile is open in IX Browser but was not opened by X Auto. Close it there; the post will be retried.', 'retry')
-    }
     let lastStage = 'validate'
     try {
       if (!address) {
         context.stage('open-profile')
         try {
-          const opening = this.deps.ixBrowser.openProfile(externalId)
+          // Asked even when IX lists the profile as opened: that list is not "open on this computer".
+          const opening = this.deps.ixBrowser.openProfile(externalId, { evenIfListedOpen: true })
           const stopped = await this.untilAborted(opening, context.signal)
           if (stopped) {
             // Stop promptly; if IX Browser still opens the profile, close it again so no browser is left behind.
@@ -167,7 +167,9 @@ export class PublishHandler implements TaskHandler {
             throw new TaskError('IX_UNREACHABLE', 'Could not reach IX Browser. Check that it is running with the Local API enabled.', 'retry')
           }
           const hint = kind === 'not-configured' ? ' Set up the IX Browser connection in Settings.' : ''
-          throw new TaskError('PROFILE_OPEN_FAILED', `IX Browser could not open the profile.${hint}`, hint ? 'fail' : 'retry')
+          // IX Browser's own answer (e.g. the profile is already open in a window), so the user knows what to fix.
+          const ixSays = error instanceof IxBrowserError && kind !== 'not-configured' ? ` IX Browser says: ${error.message.slice(0, 200)}${error.code !== null ? ` (code ${error.code})` : ''}.` : ''
+          throw new TaskError('PROFILE_OPEN_FAILED', `IX Browser could not open the profile.${hint}${ixSays} If its window is open, close it in IX Browser and retry.`, hint ? 'fail' : 'retry')
         }
         this.deps.notifier?.clear('ix-unreachable')
         address = this.deps.ixBrowser.debuggingAddressFor(externalId)
@@ -194,9 +196,11 @@ export class PublishHandler implements TaskHandler {
             context.stage(stage)
           }
         })
-        return { url: reply.url, postId: reply.postId, handle: reply.handle, verifiedBy: 'post-link' }
+        return { url: reply.url, postId: reply.postId, handle: reply.handle, verifiedBy: reply.verifiedBy === 'profile-check' ? 'profile-check' : 'post-link' }
       } catch (error) {
         if (error instanceof TaskError) throw error
+        // The engine's own reason (already plain language; never the post text) is kept for the log and the review.
+        if (error instanceof EngineError) this.deps.log.warn(`Engine: ${error.code} at stage “${this.stageLabel(lastStage)}”: ${error.message.slice(0, 300)}`, { submitted: error.submitted })
         const classified = this.classify(error, lastStage)
         // Submitted but unconfirmed: look for the post on the account's profile before asking the user.
         if (classified.disposition === 'review' && account.handle && account.identity === 'confirmed') {
@@ -264,9 +268,14 @@ export class PublishHandler implements TaskHandler {
         ? new TaskError('OUTCOME_UNKNOWN', 'Publishing was interrupted after the post was submitted. Check the account on X before trying again.', 'review')
         : new TaskError('PUBLISH_FAILED', 'Publishing stopped before anything was posted.', 'retry')
     }
+    // The Post button was never clicked: nothing was posted, safe to try again.
+    if (error.code === 'POST_BUTTON_BLOCKED') return new TaskError(error.code, `Something on X's page covered the Post button, so it was never clicked. Nothing was posted.`, 'retry')
     if (error.submitted === true || mayHavePosted) {
-      if (error.code === 'REJECTED') return new TaskError('REJECTED', `X did not accept the ${this.noun}, so it was not published.`, 'fail')
-      return new TaskError('OUTCOME_UNKNOWN', `The ${this.noun} was submitted, but X did not confirm it. Check the account on X before trying again.`, 'review')
+      if (error.code === 'REJECTED') return new TaskError('REJECTED', `X did not accept the ${this.noun}, so it was not published.${/X said: /.test(error.message) ? ` ${error.message.replace(/^.*?\(X said: /, 'X said: ').replace(/\)\.?$/, '.')}` : ''}`, 'fail')
+      // Clicked, but X's composer still held the whole text and X said nothing: X did not take it.
+      if (error.code === 'NOT_SENT') return new TaskError('NOT_SENT', `X did not take the ${this.noun}: after Post was clicked its composer still held the text, and X showed no notice. Nothing was posted — you can retry it.`, 'fail')
+      const detail = error.code === 'OUTCOME_UNKNOWN' && error.message && !/confirming it failed/.test(error.message) ? ` ${error.message}` : ''
+      return new TaskError('OUTCOME_UNKNOWN', `The ${this.noun} was submitted, but X did not confirm it.${detail} Check the account on X before trying again.`, 'review')
     }
     switch (error.code) {
       case 'ENGINE_TIMEOUT':

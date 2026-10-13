@@ -98,7 +98,7 @@ export function CampaignsPage() {
   const summary = !plan
     ? ''
     : choices.action === 'post'
-      ? `${pluralize(plan.posts, 'post')} on ${pluralize(plan.profiles.eligible, 'profile')}`
+      ? `${pluralize(plan.posts, 'post')} on ${pluralize(plan.profiles.eligible, 'profile')}${plan.fromDrafts > 1 ? ` (${plan.fromDrafts} posts × ${plan.profiles.eligible} profiles)` : ''}`
       : `${pluralize(plan.engagementTasks, choices.action === 'repost' ? 'repost task' : 'comment task')} for your profiles`
 
   const start = async () => {

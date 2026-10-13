@@ -100,9 +100,12 @@ The campaign form has three choices and one button. Profiles are never chosen.
    - Which profiles take part is decided by the main process when you press Start.
    - With none synchronized, the form says so and Start is blocked.
 3. **Posts:**
-   - For Post, choose saved posts (AI or manual). They are shared out, one profile each, unless you
-     turn on **Post each one from every profile** (repeated content, which X can limit). Posts with a
-     comment show a comment icon, and the form says how many comments will follow.
+   - For Post, choose saved posts (AI or manual). **Every selected post goes out from every eligible
+     profile**: 3 posts × 10 profiles = 30 posts, each with its own copy, task and result. The form
+     and the Start panel show the multiplication. The same text from many accounts can be limited by
+     X, so this is shown as a warning, and posts from one account are spaced out (Settings →
+     Automation). Posts with a comment show a comment icon, and the form says how many comments will
+     follow.
    - For Repost or Comment, choose posts from Post Links. For Comment, also write the comment.
 4. **Run time:** **Now**, or **at a date and time**, including tomorrow or any later date, in this
    computer's time zone. The time is stored in UTC. For reposts and comments it becomes the task's due
@@ -122,6 +125,14 @@ The campaign form has three choices and one button. Profiles are never chosen.
   - the post;
   - its time;
   - the result: published (with **View on X**), failed with the reason, needs review, or waiting.
+- **Results per post:** each selected post shows *Published on N of M accounts*, with how many are
+  waiting, publishing, failed or need review.
+- **One account failing never stops the others.** Its post fails with the reason. If it is signed out,
+  its other waiting posts are put on hold rather than failing one by one, and are released once the
+  sign-in is fixed. Failed posts can be retried one by one.
+- **Never twice:** a selected post is planned at most once per account in a campaign (database
+  constraint, migration `014`), each post has one task (idempotency key), and a campaign resumed
+  after a restart reuses the copies and schedules it already made.
 - **Comments** have their own line under each post: waiting, posting, posted (with **View comment**),
   failed, or needs review.
 - **Completion:** a campaign is *Completed* only once every post and every comment has an outcome.

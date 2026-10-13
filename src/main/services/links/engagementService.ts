@@ -254,14 +254,16 @@ export class EngagementService {
     if (account.profile.availability === 'unavailable') throw new ValidationError('IX Browser no longer reports the linked profile.')
     const externalId = account.profile.externalId
     let address = this.deps.ixBrowser.debuggingAddressFor(externalId)
-    if (!address && account.profile.runState === 'running') {
-      throw new ValidationError('The profile is open in IX Browser but was not opened by X Auto. Close it there and try again, or open the post yourself.')
-    }
     if (!address) {
       try {
-        await this.deps.ixBrowser.openProfile(externalId)
+        // IX's opened-list is not "open on this computer", so IX is asked and answers for itself.
+        await this.deps.ixBrowser.openProfile(externalId, { evenIfListedOpen: true })
       } catch (error) {
-        throw new ValidationError(error instanceof IxBrowserError && error.kind === 'not-configured' ? 'Set up the IX Browser connection in Settings first.' : 'IX Browser could not open the profile.')
+        throw new ValidationError(
+          error instanceof IxBrowserError && error.kind === 'not-configured'
+            ? 'Set up the IX Browser connection in Settings first.'
+            : `IX Browser could not open the profile.${error instanceof IxBrowserError ? ` IX Browser says: ${error.message.slice(0, 200)}` : ''} If its window is open, close it in IX Browser and try again.`
+        )
       }
       address = this.deps.ixBrowser.debuggingAddressFor(externalId)
       if (!address) throw new ValidationError('IX Browser opened the profile but did not provide a way to open the post in it.')

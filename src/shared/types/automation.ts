@@ -146,6 +146,8 @@ export interface RunItem {
   draftId: Id | null
   /** The post comes from one of your own drafts (not generated). */
   fromDraft: boolean
+  /** That saved post (one campaign post goes to every account: items with the same id are its copies). */
+  sourceDraftId: Id | null
   /** Comment / repost tasks: whether you have done it yet (null for posts). */
   engagementStatus: 'open' | 'done' | 'skipped' | null
   /** Post text preview (from the draft). */

@@ -19,7 +19,7 @@ const errOf = (fn: () => unknown) => { try { fn(); return 'none' } catch (e) { r
 const file = process.argv[2]!
 rmSync(file, { force: true })
 const db = new SqliteDatabase(file).open()
-check('migrate → v13', migrate(db, log as never) === 13)
+check('migrate → v14', migrate(db, log as never) === 14)
 const repos = createSqliteRepositories(db)
 const at = new Date().toISOString()
 db.exec(`INSERT INTO accounts (id, label, handle, identity, enabled, created_at, updated_at) VALUES ('a1','A',NULL,'unknown',1,'${at}','${at}'),('a2','B',NULL,'unknown',1,'${at}','${at}')`)

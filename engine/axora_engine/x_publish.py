@@ -36,7 +36,12 @@ SELECTORS = {
     "login": '[data-testid="loginButton"], [data-testid="login"], input[autocomplete="username"]',
     "post": 'article[data-testid="tweet"]',
     "post_text": '[data-testid="tweetText"]',
+    # Hashtag / mention suggestions X opens while the last word is "#tag" or "@name". They cover the
+    # Post button, so the click never reaches it.
+    "typeahead": '[data-testid^="typeaheadDropdown"], [role="listbox"]',
 }
+
+TRAILING_TOKEN = re.compile(r"[#@][^\s#@]+$")
 
 MAX_TEXT_CHARS = 30_000
 MAX_MEDIA = 4
@@ -123,7 +128,6 @@ async def find_post(connect: Any, params: dict[str, Any]) -> dict[str, Any]:
         raise EngineError("INVALID_PARAMS", "replies must be true or false.")
     timeout_ms = require_int(params, "timeoutMs", 5_000, 60_000, 20_000)
     base = _base_url(params)
-    wanted = _normalise(text)
     browser = await connect(endpoint, timeout_ms)
     try:
         contexts = browser.contexts
@@ -132,32 +136,52 @@ async def find_post(connect: Any, params: dict[str, Any]) -> dict[str, Any]:
         page = await contexts[0].new_page()
         try:
             page.set_default_timeout(timeout_ms)
-            await page.goto(f"{base}/{handle}/with_replies" if replies else f"{base}/{handle}", wait_until="domcontentloaded")
-            if _on_login_page(page.url):
-                raise EngineError("SESSION_EXPIRED", "This profile is signed out of X.")
-            if not await _first_visible(page, SELECTORS["post"], timeout_ms):
-                return {"found": False, "checked": 0}
-            articles = page.locator(SELECTORS["post"])
-            count = min(await articles.count(), 10)
-            for index in range(count):
-                article = articles.nth(index)
-                body = article.locator(SELECTORS["post_text"]).first
-                if not await body.count():
-                    continue
-                shown = _normalise(await body.inner_text())
-                # Long posts are cut off with "Show more": accept an exact match of what is shown.
-                if not shown or not (shown == wanted or (len(shown) >= 80 and wanted.startswith(shown.rstrip("…")))):
-                    continue
-                link = article.locator('a[href*="/status/"]:has(time)').first
-                href = await link.get_attribute("href") if await link.count() else None
-                match = STATUS_PATH.match(urlsplit(href or "").path)
-                if match and match.group(1).lower() == handle.lower():
-                    return {"found": True, "checked": index + 1, "url": f"{X_BASE_URL}/{match.group(1)}/status/{match.group(2)}", "postId": match.group(2), "handle": match.group(1)}
-            return {"found": False, "checked": count}
+            return await _search_profile(page, base, handle, text, replies, timeout_ms)
         finally:
             await page.close(run_before_unload=False)
     finally:
         await browser.close()
+
+
+async def _search_profile(page: Any, base: str, handle: str, text: str, replies: bool, timeout_ms: int) -> dict[str, Any]:
+    """The newest posts (or replies) on @handle's profile, searched for exactly this text."""
+    wanted = _normalise(text)
+    await page.goto(f"{base}/{handle}/with_replies" if replies else f"{base}/{handle}", wait_until="domcontentloaded")
+    if _on_login_page(page.url):
+        raise EngineError("SESSION_EXPIRED", "This profile is signed out of X.")
+    if not await _first_visible(page, SELECTORS["post"], timeout_ms):
+        return {"found": False, "checked": 0}
+    articles = page.locator(SELECTORS["post"])
+    count = min(await articles.count(), 10)
+    for index in range(count):
+        article = articles.nth(index)
+        body = article.locator(SELECTORS["post_text"]).first
+        if not await body.count():
+            continue
+        shown = _normalise(await body.inner_text())
+        # Long posts are cut off with "Show more": accept an exact match of what is shown.
+        if not shown or not (shown == wanted or (len(shown) >= 80 and wanted.startswith(shown.rstrip("…")))):
+            continue
+        link = article.locator('a[href*="/status/"]:has(time)').first
+        href = await link.get_attribute("href") if await link.count() else None
+        match = STATUS_PATH.match(urlsplit(href or "").path)
+        if match and match.group(1).lower() == handle.lower():
+            return {"found": True, "checked": index + 1, "url": f"{X_BASE_URL}/{match.group(1)}/status/{match.group(2)}", "postId": match.group(2), "handle": match.group(1)}
+    return {"found": False, "checked": count}
+
+
+async def _close_typeahead(page: Any, composer: Any) -> bool:
+    """Closes X's hashtag / mention suggestions if they are open, by ending the word with a space
+    (X trims it; the text check ignores whitespace). Never presses Escape, which can close the composer."""
+    if not await page.locator(SELECTORS["typeahead"]).count():
+        return False
+    # The caret is still at the end of the text just typed; clicking could move it into the middle.
+    await page.keyboard.insert_text(" ")
+    try:
+        await page.locator(SELECTORS["typeahead"]).first.wait_for(state="detached", timeout=3_000)
+    except Exception:  # noqa: BLE001 — checked again by the trial click
+        pass
+    return True
 
 
 POST_URL = re.compile(r"^https://x\.com/(?:[A-Za-z0-9_]{1,15}|i)/status/\d{1,25}$")
@@ -239,8 +263,10 @@ async def publish(connect: Any, params: dict[str, Any]) -> dict[str, Any]:
             step("open-composer", t)
 
             account_check = "skipped"
+            # The signed-in @handle (from X's side navigation) is also where the post is looked for if X
+            # shows no confirmation — read even when no username is confirmed for the account.
+            seen = await _signed_in_handle(page)
             if expected:
-                seen = await _signed_in_handle(page)
                 if seen is None:
                     account_check = "unknown"
                 elif seen.lower() != expected.lower():
@@ -279,17 +305,34 @@ async def publish(connect: Any, params: dict[str, Any]) -> dict[str, Any]:
                     raise EngineError("POST_BUTTON_DISABLED", "X did not enable the Post button (the post may be too long or an upload failed). Nothing was posted.")
                 await asyncio.sleep(0.25)
 
+            # The Post button must really be clickable before anything counts as submitted. A trial click
+            # runs Playwright's checks (visible, stable, not covered by another element) without clicking.
+            # Hashtag / mention suggestions cover the button: they are closed first.
+            closed_typeahead = await _close_typeahead(page, composer) if TRAILING_TOKEN.search(text.strip()) or await page.locator(SELECTORS["typeahead"]).count() else False
+            try:
+                await button.click(trial=True, timeout=5_000)
+            except Exception:  # noqa: BLE001 — Playwright raises its own TimeoutError
+                if closed_typeahead or not await _close_typeahead(page, composer):
+                    raise EngineError("POST_BUTTON_BLOCKED", "Something on X's page covered the Post button, so it was never clicked. Nothing was posted.", True) from None
+                try:
+                    await button.click(trial=True, timeout=5_000)
+                except Exception:  # noqa: BLE001
+                    raise EngineError("POST_BUTTON_BLOCKED", "Something on X's page covered the Post button, so it was never clicked. Nothing was posted.", True) from None
+            if _normalise(await composer.inner_text()) != _normalise(text):
+                raise EngineError("TEXT_MISMATCH", "The composer did not keep the post text exactly. Nothing was posted.")
+
             # Point of no return: from here on the post may exist.
             progress("submit")
             submitted = True
             t = time.monotonic()
-            await button.click()
+            await button.click(timeout=10_000)
             step("submit", t)
 
             progress("confirm")
             t = time.monotonic()
             deadline = time.monotonic() + confirm_ms / 1000
             toast_seen_at: float | None = None
+            closed_at: float | None = None
             while time.monotonic() < deadline:
                 link = page.locator(f'{SELECTORS["toast"]} a[href*="/status/"]').first
                 if await link.count():
@@ -304,15 +347,52 @@ async def publish(connect: Any, params: dict[str, Any]) -> dict[str, Any]:
                             "handle": match.group(1),
                             "accountCheck": account_check,
                             "inReplyTo": in_reply_to,
+                            "verifiedBy": "post-link",
                             "steps": steps,
                         }
                 if await page.locator(SELECTORS["toast"]).count():
                     toast_seen_at = toast_seen_at or time.monotonic()
                     if time.monotonic() - toast_seen_at > 4:
                         # A notice without a post link: X declined the post.
-                        raise EngineError("REJECTED", "X did not accept the post.", False, submitted=True)
+                        notice = (await page.locator(SELECTORS["toast"]).first.inner_text()).strip().replace("\n", " ")[:120]
+                        raise EngineError("REJECTED", f"X did not accept the post (X said: {notice}).", False, submitted=True)
+                # X clears and closes the composer as soon as it takes a post.
+                if not await page.locator(SELECTORS["composer"]).count():
+                    closed_at = closed_at or time.monotonic()
+                    if time.monotonic() - closed_at > 3:
+                        break
                 await asyncio.sleep(0.25)
-            raise EngineError("OUTCOME_UNKNOWN", "The post was submitted, but X did not confirm it in time.", False, submitted=True)
+
+            composer_closed = not await page.locator(SELECTORS["composer"]).count()
+            if not composer_closed and toast_seen_at is None:
+                held = await page.locator(SELECTORS["composer"]).first.inner_text()
+                if _normalise(held) == _normalise(text):
+                    # The composer still holds the whole post and X said nothing: X did not take it.
+                    raise EngineError("NOT_SENT", "X did not take the post: its composer still held the text after the Post button was clicked, and X showed no notice. Nothing was posted.", False, submitted=True)
+
+            # No confirmation notice: look for the post on the signed-in account's own profile (bounded).
+            if seen:
+                progress("check-profile")
+                found = await _search_profile(page, base, seen, text, bool(in_reply_to), 20_000)
+                if found.get("found"):
+                    step("check-profile", t, found=True)
+                    return {
+                        "ok": True,
+                        "url": found["url"],
+                        "postId": found["postId"],
+                        "handle": found["handle"],
+                        "accountCheck": account_check,
+                        "inReplyTo": in_reply_to,
+                        "verifiedBy": "profile-check",
+                        "steps": steps,
+                    }
+                raise EngineError(
+                    "OUTCOME_UNKNOWN",
+                    f"X showed no confirmation{' and closed the composer' if composer_closed else ''}, and the post is not among the latest {'replies' if in_reply_to else 'posts'} on @{seen} yet.",
+                    False,
+                    submitted=True,
+                )
+            raise EngineError("OUTCOME_UNKNOWN", "The post was submitted, but X showed no confirmation and the signed-in account could not be read to check its profile.", False, submitted=True)
         finally:
             # run_before_unload=False: never trigger X's "discard post?" prompt.
             await page.close(run_before_unload=False)

@@ -1,105 +1,16 @@
 import { Link2, RefreshCw, SquarePen, UsersRound } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
-import type { AutomationConfig, RunPlan } from '@shared/types/automation'
-import { Button, Checkbox, Field, Input, SearchField, SegmentedControl, Spinner, Switch, Textarea, useToast } from '@/components/ui'
+import type { RunPlan } from '@shared/types/automation'
+import { Button, Checkbox, Field, Input, SearchField, SegmentedControl, Spinner, Textarea, useToast } from '@/components/ui'
 import { useDrafts } from '@/data/drafts'
 import { useLinks } from '@/data/links'
 import { errorMessage, relay } from '@/lib/bridge'
 import { NAV_ITEMS } from '@/app/navigation'
 import { DraftPicker } from './DraftPicker'
 
-export type CampaignAction = 'post' | 'repost' | 'comment'
-
-/** The choices of a campaign; everything else is fixed (see toConfig). Profiles are never chosen: every eligible synchronized profile takes part. */
-export interface CampaignChoices {
-  name: string
-  action: CampaignAction
-  draftIds: string[]
-  /** Post each selected post from every profile (repeated content) instead of spreading them. */
-  everyProfile: boolean
-  /** Repost / comment targets (post links). */
-  repostLinks: string[]
-  /** Your comment (comment action) — you approve and post it yourself from the task. */
-  commentText: string
-  when: 'now' | 'schedule'
-  startAt: string | null
-}
-
-export const defaultChoices = (): CampaignChoices => ({
-  name: 'My campaign',
-  action: 'post',
-  draftIds: [],
-  everyProfile: false,
-  repostLinks: [],
-  commentText: '',
-  when: 'now',
-  startAt: null
-})
-
-/**
- * The automation config for these choices, on the existing campaign engine. Fixed: every eligible
- * synchronized profile (the main process decides which when the campaign starts), posted
- * automatically, the signed-in account checked wherever its X username is confirmed, one post per
- * slot (queue spacing applies), no end date / posting days / hours. A saved post's comment goes out
- * as a reply from the same account after the post. Reposts and comments on Post Links are tasks you
- * complete in the profile — one of your accounts per post (several of your accounts on one post is
- * coordinated engagement); the comment is your own text.
- */
-export function toConfig(c: CampaignChoices): AutomationConfig {
-  const posting = c.action === 'post'
-  const count = Math.min(Math.max(c.draftIds.length, 1), 50)
-  return {
-    name: c.name.trim() || 'Campaign',
-    mode: 'full-auto',
-    content: {
-      source: 'drafts',
-      draftIds: posting ? c.draftIds : [],
-      prompt: '',
-      topic: '',
-      language: 'English',
-      tone: 'professional',
-      length: 'short',
-      hashtags: [],
-      suggestHashtags: false,
-      instructions: '',
-      generateText: false,
-      textProviderId: null,
-      textModel: null,
-      fixedText: '',
-      generateImages: false,
-      imageProviderId: null,
-      imageModel: null,
-      imageStyle: 'illustration',
-      imageSize: '1024x1024',
-      existingAssetId: null
-    },
-    targets: { scope: 'all', profileIds: [], distribution: posting && c.everyProfile ? 'same' : 'unique', allowDuplicates: posting && c.everyProfile, requireConfirmedIdentity: false, createMissingAccounts: true },
-    actions: {
-      publish: posting,
-      saveDrafts: false,
-      repost: c.action === 'repost',
-      comment: c.action === 'comment',
-      like: false,
-      engagementLinks: posting ? [] : c.repostLinks,
-      commentText: c.action === 'comment' ? c.commentText : ''
-    },
-    schedule: { when: c.when, startAt: c.when === 'schedule' ? c.startAt : null, endAt: null, intervalMinutes: 0, postsPerProfile: count, maxPostsPerRun: 500, workingHours: { enabled: false, start: '09:00', end: '18:00' }, days: [0, 1, 2, 3, 4, 5, 6] },
-    failure: { generationRetries: 0, onTextFailure: 'skip', onImageFailure: 'skip', onProfileUnavailable: 'skip', stopAfterFailures: 3 }
-  }
-}
-
-/** Choices from an older saved setup (e.g. a dashboard quick-start link): keep what still applies. */
-export function choicesFrom(config: AutomationConfig): CampaignChoices {
-  const base = defaultChoices()
-  return {
-    ...base,
-    name: config.name,
-    draftIds: config.content.source === 'drafts' ? config.content.draftIds : [],
-    when: config.schedule.when,
-    startAt: config.schedule.startAt
-  }
-}
+export { choicesFrom, defaultChoices, toConfig, type CampaignAction, type CampaignChoices } from '@shared/lib/campaign'
+import type { CampaignAction, CampaignChoices } from '@shared/lib/campaign'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const toLocalInput = (iso: string | null) => {
@@ -219,13 +130,12 @@ export function CampaignForm({ value, onChange, plan, checking }: { value: Campa
                   {plan.comments === 1 ? 'One post has a comment' : `${plan.comments} posts have a comment`}: each is posted as a reply by the same account, right after X confirms its post.
                 </p>
               )}
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span className="flex flex-col">
-                  <span className="text-fg">Post each one from every profile</span>
-                  <span className="text-xs text-fg-subtle">Off: the posts are shared out, one profile each. On: the same text (and comment) from several accounts, which X can limit.</span>
-                </span>
-                <Switch checked={value.everyProfile} onChange={(everyProfile) => set({ everyProfile })} aria-label="Post each one from every profile" />
-              </label>
+              <p className="text-xs text-fg-subtle" aria-live="polite">
+                {plan && plan.fromDrafts > 0
+                  ? `Each selected post goes out from every profile: ${plan.fromDrafts} ${plan.fromDrafts === 1 ? 'post' : 'posts'} × ${plan.profiles.eligible} ${plan.profiles.eligible === 1 ? 'profile' : 'profiles'} = ${plan.posts} ${plan.posts === 1 ? 'post' : 'posts'}, each with its own copy and result.`
+                  : 'Each selected post goes out from every synchronized profile, each with its own copy and result.'}{' '}
+                The same text from many accounts can be limited by X; posts from one account are spaced out (Settings → Automation).
+              </p>
             </>
           )
         ) : (

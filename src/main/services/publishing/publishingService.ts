@@ -380,6 +380,17 @@ export class PublishingService {
    */
   resolveReview(resolution: ReviewResolution): void {
     const now = this.now().toISOString()
+    // "It was posted" counts only with the post's link: the link is the evidence, and without it a
+    // campaign would show the post as published while nothing proves it exists.
+    if (resolution.outcome === 'posted') {
+      const parsed = resolution.url ? parsePostUrl(resolution.url) : null
+      if (!resolution.url?.trim()) throw new ValidationError('Paste the link to the post on X (x.com/<username>/status/<id>). Without it, mark it as not posted and retry.')
+      if (!parsed) throw new ValidationError('That is not a link to a post on X (x.com/<username>/status/<id>).')
+      const task = this.deps.db.get<{ handle: string | null; identity: string }>('SELECT a.handle, a.identity FROM tasks t LEFT JOIN accounts a ON a.id = t.account_id WHERE t.id = :id', { id: resolution.taskId })
+      if (task?.handle && task.identity === 'confirmed' && parsed.handle && parsed.handle.toLowerCase() !== task.handle.toLowerCase()) {
+        throw new ValidationError(`That link is to a post by @${parsed.handle}, not @${task.handle}.`)
+      }
+    }
     const kind = this.deps.db.get<{ kind: string }>('SELECT kind FROM tasks WHERE id = :id', { id: resolution.taskId })?.kind
     if (kind === 'reply') {
       // A comment: only the task's outcome is recorded (the post itself was already confirmed).
