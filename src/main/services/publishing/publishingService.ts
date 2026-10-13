@@ -366,8 +366,8 @@ export class PublishingService {
   /** Re-opens a failed publish task (user decision). */
   retryTask(taskId: Id): void {
     this.deps.queue.retry(taskId, (task) => {
-      // A comment's post is already published: only the comment's own task is reopened.
-      if (task.kind === 'reply') return
+      // A comment's post is already published (and a repost has no post of yours): only its own task is reopened.
+      if (task.kind === 'reply' || task.kind === 'repost') return
       if (task.scheduleId) this.deps.schedules.setStatus(task.scheduleId, 'queued', this.now().toISOString())
       if (task.draftId) this.setDraftStatus(task.draftId, 'scheduled')
     })
@@ -392,8 +392,8 @@ export class PublishingService {
       }
     }
     const kind = this.deps.db.get<{ kind: string }>('SELECT kind FROM tasks WHERE id = :id', { id: resolution.taskId })?.kind
-    if (kind === 'reply') {
-      // A comment: only the task's outcome is recorded (the post itself was already confirmed).
+    if (kind === 'reply' || kind === 'repost') {
+      // A comment or repost: only the task's outcome is recorded (no post of yours changes).
       const parsed = resolution.outcome === 'posted' && resolution.url ? parsePostUrl(resolution.url) : null
       if (resolution.outcome === 'posted' && resolution.url && !parsed) throw new ValidationError('That is not a link to a post on X (x.com/<username>/status/<id>).')
       if (resolution.outcome === 'posted') {
@@ -421,9 +421,13 @@ export class PublishingService {
   /** Called by the queue's publish handler inside the outcome transaction. */
   settleTask(task: TaskRecord, settlement: TaskSettlement): void {
     const now = this.now().toISOString()
-    if (task.kind === 'reply') {
-      // A comment never changes its post's schedule or draft; its own task holds the outcome.
+    if (task.kind === 'reply' || task.kind === 'repost') {
+      // A comment or repost never changes a post's schedule or draft; its own task holds the outcome.
       if (settlement.status === 'succeeded' && task.accountId) this.deps.accounts.touch(task.accountId, now)
+      // Signed out or the wrong account: that account's other waiting work is held, not failed one by one.
+      if (settlement.status === 'failed' && task.accountId && (settlement.errorCode === 'SESSION_EXPIRED' || settlement.errorCode === 'ACCOUNT_MISMATCH')) {
+        this.deps.queueRepo?.holdQueuedForAccount(task.accountId, now)
+      }
       return
     }
     switch (settlement.status) {
@@ -569,6 +573,7 @@ export class PublishingService {
 
   private onTaskSettled(task: TaskRecord, settlement: TaskSettlement): void {
     if (task.kind === 'reply') return this.onCommentSettled(task, settlement)
+    if (task.kind === 'repost') return this.onRepostSettled(task, settlement)
     if (task.kind !== 'publish') return
     const account = task.accountId ? this.deps.accounts.get(task.accountId) : null
     const who = account ? (account.handle ? `@${account.handle}` : account.label) : 'the account'
@@ -606,6 +611,22 @@ export class PublishingService {
       this.deps.notifier.notify(
         { tone: 'danger', event: 'taskFailures', title: 'A post could not be published', body: settlement.error ?? 'Publishing failed.', to: '/campaigns?queue=attention' },
         { key: `publish-failed:${task.accountId}:${settlement.errorCode}` }
+      )
+    }
+  }
+
+  private onRepostSettled(task: TaskRecord, settlement: TaskSettlement): void {
+    const account = task.accountId ? this.deps.accounts.get(task.accountId) : null
+    const who = account ? (account.handle ? `@${account.handle}` : account.label) : 'the account'
+    const url = typeof task.payload.url === 'string' ? task.payload.url : null
+    if (settlement.status === 'succeeded') {
+      this.deps.notifier.notify({ tone: 'success', event: 'systemNotices', title: 'Reposted', body: `Reposted from ${who}, confirmed on X.`, to: '/campaigns' }, { key: 'reposted', quietMs: 20_000 })
+    } else if (settlement.status === 'needs-review') {
+      this.deps.notifier.notify({ tone: 'warning', event: 'taskFailures', title: 'Repost outcome needs review', body: `It may have been reposted from ${who}${url ? ` (${url})` : ''}. Check X, then confirm it.`, to: '/campaigns?queue=attention' })
+    } else if (settlement.status === 'failed') {
+      this.deps.notifier.notify(
+        { tone: 'danger', event: 'taskFailures', title: 'A repost failed', body: settlement.error ?? 'The repost failed.', to: '/campaigns?queue=attention' },
+        { key: `repost-failed:${task.accountId}:${settlement.errorCode}` }
       )
     }
   }

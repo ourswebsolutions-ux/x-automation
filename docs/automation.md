@@ -91,10 +91,16 @@ The campaign form has three choices and one button. Profiles are never chosen.
 1. **Action:**
    - **Post** publishes your saved posts. A post that carries a comment is followed by that comment,
      as a reply from the same account.
-   - **Repost** and **Comment** plan tasks: X Auto opens the post in the profile for you, and you
-     repost it or post the comment. Neither is automated. These act on other people's posts from
-     Post Links, so only one of your accounts gets each post, and the same comment is never planned
-     from two of your accounts (coordinated engagement).
+   - **Repost**: X Auto reposts each chosen post (from Post Links) at the run time, in one of your
+     accounts' profiles. It counts only once the post shows **Undo repost** on X (reloaded if
+     needed). A post already reposted from that account counts as done without clicking again.
+   - **Comment**: X Auto posts your comment as a reply to the chosen post at the run time, through
+     the same composer and checks as posts, and counts it only once X confirms it.
+   - **Rules for both** (X's automation rules): one of your accounts per post (never several of
+     your accounts on one post), and never a post from one of your accounts amplified by your
+     others. One post per comment, because the same comment on several posts is repetitive
+     automated replying. The daily guideline per account (Settings → Automation) applies.
+     Likes stay tasks you do yourself.
 2. **Profiles** (information only): *N of M synchronized profiles take part*, plus how many are
    unavailable or disabled, with **View profiles** and **Sync profiles**.
    - Which profiles take part is decided by the main process when you press Start.

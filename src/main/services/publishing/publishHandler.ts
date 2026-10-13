@@ -52,16 +52,41 @@ const REPLY_STAGES: Record<string, string> = {
   'check-profile': 'Checking the profile for the comment'
 }
 
-/** What a reply task carries: the post it answers (published by the same account) and the comment. */
+const REPOST_STAGES: Record<string, string> = {
+  ...STAGES,
+  validate: 'Checking the repost',
+  'open-post': 'Opening the post on X',
+  submit: 'Reposting',
+  confirm: 'Confirming the repost on X'
+}
+
+/**
+ * What a reply task carries: the post it answers and the comment. Either the comment saved with a post
+ * (parentTaskId: the same account's confirmed post) or a campaign comment on a chosen post
+ * (engagementTaskId: its task in Post Links).
+ */
 export interface ReplyPayload {
-  parentTaskId: string
+  parentTaskId?: string
+  engagementTaskId?: string
   parentPostId: string
   parentUrl: string
   text: string
+  /** Campaign comments: the time chosen for it (it never runs earlier; too late after a closed app = missed). */
+  dueAt?: string | null
 }
 
+/** A campaign repost: the post to repost, its engagement task, and the chosen time. */
+export interface RepostPayload {
+  engagementTaskId: string
+  url: string
+  dueAt: string | null
+}
+
+export const isRepostPayload = (value: Record<string, unknown>): value is Record<string, unknown> & RepostPayload =>
+  typeof value.engagementTaskId === 'string' && typeof value.url === 'string' && /^https:\/\/x\.com\/(?:[A-Za-z0-9_]{1,15}|i)\/status\/\d{1,25}$/.test(value.url)
+
 export const isReplyPayload = (value: Record<string, unknown>): value is Record<string, unknown> & ReplyPayload =>
-  typeof value.parentTaskId === 'string' &&
+  (typeof value.parentTaskId === 'string' || typeof value.engagementTaskId === 'string') &&
   typeof value.parentPostId === 'string' &&
   /^\d{1,25}$/.test(value.parentPostId) &&
   typeof value.parentUrl === 'string' &&
@@ -96,16 +121,16 @@ export class PublishHandler implements TaskHandler {
 
   constructor(
     private readonly deps: Deps,
-    readonly kind: 'publish' | 'reply' = 'publish'
+    readonly kind: 'publish' | 'reply' | 'repost' = 'publish'
   ) {}
 
   stageLabel(stage: string): string {
-    return (this.kind === 'reply' ? REPLY_STAGES : STAGES)[stage] ?? stage
+    return (this.kind === 'reply' ? REPLY_STAGES : this.kind === 'repost' ? REPOST_STAGES : STAGES)[stage] ?? stage
   }
 
-  /** Keeps posts from one account apart by the configured spacing (a comment follows its own post directly). */
+  /** Keeps posts from one account apart by the configured spacing (comments and reposts aren't posts). */
   notBefore(task: TaskRecord, now: Date): string | null {
-    if (this.kind === 'reply') return null
+    if (this.kind !== 'publish') return null
     const spacing = this.deps.settings().spacingMinutes * 60_000
     if (!task.accountId || spacing <= 0) return null
     const last = this.deps.queueRepo.lastPublishAt(task.accountId)
@@ -121,21 +146,33 @@ export class PublishHandler implements TaskHandler {
   async run(task: TaskRecord, context: TaskContext): Promise<PublishResult | null> {
     context.stage('validate')
     const reply = this.kind === 'reply' ? task.payload : null
-    if (reply && !isReplyPayload(reply)) throw new TaskError('INVALID_COMMENT', 'This comment has no confirmed post to reply to.', 'fail')
+    if (reply && !isReplyPayload(reply)) throw new TaskError('INVALID_COMMENT', 'This comment has no post to reply to.', 'fail')
+    const repost = this.kind === 'repost' ? task.payload : null
+    if (repost && !isRepostPayload(repost)) throw new TaskError('INVALID_REPOST', 'This repost has no valid post link.', 'fail')
+    const engagement = Boolean(repost) || (reply !== null && typeof reply.engagementTaskId === 'string')
+    // A chosen time that passed while X Auto was closed: it is not done late beyond the late-posts window.
+    const dueAt = engagement ? ((repost ?? reply)!.dueAt as string | null | undefined) : null
+    if (dueAt) {
+      const lateMs = Date.now() - new Date(dueAt).getTime()
+      const graceMs = this.deps.settings().missedGraceMinutes * 60_000
+      // A retry (yours, or after a safe failure) moves run_after past the chosen time: then it runs now.
+      const retried = new Date(task.runAfter).getTime() > new Date(dueAt).getTime() + 1_000
+      if (lateMs > graceMs && !retried) throw new TaskError('MISSED', `Its time (${new Date(dueAt).toLocaleString()}) passed while X Auto was not running, so it was not done late. Retry it to do it now.`, 'fail')
+    }
     // Never publish twice: a link recorded for this task means it already happened.
-    const existing = reply ? null : this.deps.postLinks.byTask(task.id)
+    const existing = reply || repost ? null : this.deps.postLinks.byTask(task.id)
     if (existing) return { url: existing.url, postId: existing.postId, handle: existing.handle, verifiedBy: 'post-link' }
 
-    const draft = task.draftId ? await this.deps.drafts.get(task.draftId) : null
-    if (!reply && !draft) throw new TaskError('DRAFT_MISSING', 'The draft was deleted, so there is nothing to publish.', 'fail')
-    if (!reply && draft!.status === 'published') throw new TaskError('ALREADY_PUBLISHED', 'This draft was already published.', 'fail')
+    const draft = task.draftId && !repost ? await this.deps.drafts.get(task.draftId) : null
+    if (!reply && !repost && !draft) throw new TaskError('DRAFT_MISSING', 'The draft was deleted, so there is nothing to publish.', 'fail')
+    if (!reply && !repost && draft!.status === 'published') throw new TaskError('ALREADY_PUBLISHED', 'This draft was already published.', 'fail')
     const account = task.accountId ? this.deps.accounts.get(task.accountId) : null
     if (!account) throw new TaskError('ACCOUNT_MISSING', 'The account for this post no longer exists.', 'fail')
     if (!account.enabled) throw new TaskError('ACCOUNT_DISABLED', `${account.label} is disabled for tasks. Enable it, then retry.`, 'fail')
     if (!account.profile) throw new TaskError('NOT_LINKED', `${account.label} is not linked to an IX Browser profile.`, 'fail')
     if (account.profile.availability === 'unavailable') throw new TaskError('PROFILE_UNAVAILABLE', 'IX Browser no longer reports the linked profile.', 'fail')
-    const text = reply && isReplyPayload(reply) ? reply.text.trim() : composePost(draft!.body, draft!.hashtags)
-    const media = reply ? [] : draft!.media.map((m) => this.deps.assetFile(m.id))
+    const text = repost ? '' : reply && isReplyPayload(reply) ? reply.text.trim() : composePost(draft!.body, draft!.hashtags)
+    const media = reply || repost ? [] : draft!.media.map((m) => this.deps.assetFile(m.id))
     if (media.some((path) => !path)) throw new TaskError('MEDIA_MISSING', 'An attached image is missing from the image folder.', 'fail')
     this.checkCancelled(context)
 
@@ -187,6 +224,28 @@ export class PublishHandler implements TaskHandler {
       if (account.handle && account.identity === 'confirmed') params.expectedHandle = account.handle
       if (reply && isReplyPayload(reply)) params.inReplyTo = reply.parentPostId
       if (this.deps.testBaseUrl) params.baseUrl = this.deps.testBaseUrl
+
+      if (repost && isRepostPayload(repost)) {
+        const repostParams: Record<string, unknown> = { endpoint: params.endpoint, url: repost.url, timeoutMs: 30_000, confirmTimeoutMs: 20_000 }
+        if (params.expectedHandle) repostParams.expectedHandle = params.expectedHandle
+        if (this.deps.testBaseUrl) repostParams.baseUrl = this.deps.testBaseUrl
+        try {
+          const done = await this.deps.engine.request<{ url: string; postId: string; handle: string | null; alreadyReposted: boolean }>('x.repost', repostParams, {
+            timeoutMs: 180_000,
+            onProgress: (stage) => {
+              lastStage = stage
+              context.stage(stage)
+            }
+          })
+          if (done.alreadyReposted) this.deps.log.info(`The post was already reposted from ${account.label}; nothing was clicked`)
+          // Confirmed by X's own state of the post (Undo repost), never by the click alone.
+          return { url: done.url, postId: done.postId, handle: done.handle, verifiedBy: 'post-state' }
+        } catch (error) {
+          if (error instanceof TaskError) throw error
+          if (error instanceof EngineError) this.deps.log.warn(`Engine: ${error.code} at stage “${this.stageLabel(lastStage)}”: ${error.message.slice(0, 300)}`, { submitted: error.submitted })
+          throw this.classify(error, lastStage)
+        }
+      }
 
       try {
         const reply = await this.deps.engine.request<PublishReply>('x.publish', params, {
@@ -257,7 +316,7 @@ export class PublishHandler implements TaskHandler {
   }
 
   private get noun(): string {
-    return this.kind === 'reply' ? 'comment' : 'post'
+    return this.kind === 'reply' ? 'comment' : this.kind === 'repost' ? 'repost' : 'post'
   }
 
   /** Turns an engine failure into retry / fail / review, erring on the side of review. */
@@ -270,10 +329,16 @@ export class PublishHandler implements TaskHandler {
     }
     // The Post button was never clicked: nothing was posted, safe to try again.
     if (error.code === 'POST_BUTTON_BLOCKED') return new TaskError(error.code, `Something on X's page covered the Post button, so it was never clicked. Nothing was posted.`, 'retry')
+    // Repost outcomes decided before the final click: nothing was reposted.
+    if (error.code === 'POST_UNAVAILABLE' || error.code === 'REPOST_UNAVAILABLE') return new TaskError(error.code, error.message, 'fail')
+    if (error.code === 'POST_NOT_FOUND' || error.code === 'REPOST_BLOCKED' || error.code === 'REPOST_MENU_MISSING') return new TaskError(error.code, error.message, 'retry')
     if (error.submitted === true || mayHavePosted) {
       if (error.code === 'REJECTED') return new TaskError('REJECTED', `X did not accept the ${this.noun}, so it was not published.${/X said: /.test(error.message) ? ` ${error.message.replace(/^.*?\(X said: /, 'X said: ').replace(/\)\.?$/, '.')}` : ''}`, 'fail')
       // Clicked, but X's composer still held the whole text and X said nothing: X did not take it.
-      if (error.code === 'NOT_SENT') return new TaskError('NOT_SENT', `X did not take the ${this.noun}: after Post was clicked its composer still held the text, and X showed no notice. Nothing was posted — you can retry it.`, 'fail')
+      if (error.code === 'NOT_SENT') {
+        if (this.kind === 'repost') return new TaskError('NOT_SENT', `${error.message} You can retry it.`, 'fail')
+        return new TaskError('NOT_SENT', `X did not take the ${this.noun}: after Post was clicked its composer still held the text, and X showed no notice. Nothing was posted — you can retry it.`, 'fail')
+      }
       const detail = error.code === 'OUTCOME_UNKNOWN' && error.message && !/confirming it failed/.test(error.message) ? ` ${error.message}` : ''
       return new TaskError('OUTCOME_UNKNOWN', `The ${this.noun} was submitted, but X did not confirm it.${detail} Check the account on X before trying again.`, 'review')
     }

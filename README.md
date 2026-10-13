@@ -323,9 +323,8 @@ its own. Details and the selector caveat: [docs/publishing.md](docs/publishing.m
 ### Post links & engagement (Phase 9)
 
 Published posts are saved as links; more can be pasted or imported (TXT/CSV), tagged, noted and
-exported. Engagement tasks are a checklist the user acts on — X Auto never likes, reposts,
-replies or follows by itself — with guardrails against self-amplification and coordinated
-engagement. [docs/engagement.md](docs/engagement.md).
+exported. Campaign reposts and comments are performed by X Auto at their run time and counted only once X confirms them (one of your accounts per post); other engagement tasks (likes, follow-ups, tasks you add in Post Links) are a checklist the user acts on.
+Guardrails against self-amplification and coordinated engagement apply to both. [docs/engagement.md](docs/engagement.md).
 
 ### Create Post and Campaigns (Phase 12)
 

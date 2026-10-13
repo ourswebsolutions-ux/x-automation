@@ -47,7 +47,7 @@ interface Deps {
   providers: Pick<ProviderService, 'list'>
   preferences: Pick<PreferencesStore, 'get'>
   publishing: PublishingService
-  engagement: Pick<EngagementService, 'create'>
+  engagement: Pick<EngagementService, 'create' | 'setStatus'>
   queue: QueueService
   notifier: Notifier
   log: ScopedLogger
@@ -133,6 +133,20 @@ export class RunService {
 
   constructor(private readonly deps: Deps) {
     deps.queue.onSettled((task, settlement) => {
+      // A campaign repost or comment: its Post Links task is done once X confirmed it; the run finishes when all have an outcome.
+      const engagementTaskId = typeof task.payload.engagementTaskId === 'string' ? task.payload.engagementTaskId : null
+      if ((task.kind === 'repost' || task.kind === 'reply') && engagementTaskId) {
+        if (settlement.status === 'succeeded') {
+          try {
+            deps.engagement.setStatus([engagementTaskId], 'done')
+          } catch (error) {
+            deps.log.warn('Could not mark the engagement task done', { reason: error instanceof Error ? error.message : 'unknown' })
+          }
+        }
+        const owner = deps.db.get<{ run_id: string }>("SELECT run_id FROM run_items WHERE engagement_task_id = :id AND kind = 'engagement'", { id: engagementTaskId })
+        if (owner) this.checkFinished(owner.run_id)
+        return
+      }
       // A comment settles after its post: the run finishes once both have an outcome.
       if (task.kind === 'reply' && task.draftId) {
         const owner = deps.db.get<{ run_id: string }>("SELECT run_id FROM run_items WHERE draft_id = :id AND kind = 'post'", { id: task.draftId })
@@ -318,9 +332,12 @@ export class RunService {
     const badLinks = links.filter((l) => !parsePostUrl(l))
     if (kinds.length && links.length === 0) block('Add the post links for reposting, commenting or liking.')
     if (badLinks.length) block(`${badLinks.length} engagement ${badLinks.length === 1 ? 'link is' : 'links are'} not a link to a post on X.`)
-    if (actions.comment && !actions.commentText.trim()) block('Write the comment text for comment tasks.')
+    if (actions.comment && !actions.commentText.trim()) block('Write the comment.')
+    // The same comment on several posts is the repetitive automated reply X's rules don't allow.
+    if (actions.comment && links.length > 1) block('A comment goes to one post. Choose one post for this comment (write a separate comment for each post).')
     const engagementTasks = kinds.length && eligible.length ? links.filter((l) => parsePostUrl(l)).length * kinds.length : 0
-    if (engagementTasks) warn('Reposts, comments and likes are planned as tasks you complete in the profile — X Auto doesn’t do them automatically.')
+    if (engagementTasks && actions.like) warn('Likes are planned as tasks you complete in the profile — X Auto doesn’t like posts by itself.')
+    if (engagementTasks && (actions.repost || actions.comment)) warn('Each post is reposted or commented on from one of your accounts only — several of your accounts on one post is coordinated engagement.')
 
     const summary: string[] = []
     if (publishing) summary.push(config.mode === 'full-auto' ? 'Publish automatically' : 'Publish after your approval')
@@ -329,7 +346,9 @@ export class RunService {
     if (content.source !== 'drafts' && (content.source === 'generate' || generations > 0)) summary.push(content.generateText ? 'Generate text with AI' : 'Use your own text')
     if (content.generateImages) summary.push(useDrafts ? 'Generate and attach an image per post (drafts without one)' : 'Generate and attach an image per post')
     else if (content.existingAssetId) summary.push('Attach the selected library image')
-    if (kinds.length) summary.push(`Plan ${kinds.join(', ')} tasks (done by you)`)
+    if (actions.repost && engagementTasks) summary.push(schedule.when === 'schedule' ? 'Repost at the chosen time, confirmed on X' : 'Repost now, confirmed on X')
+    if (actions.comment && engagementTasks) summary.push(schedule.when === 'schedule' ? 'Post the comment at the chosen time, confirmed on X' : 'Post the comment now, confirmed on X')
+    if (actions.like && engagementTasks) summary.push('Plan like tasks (done by you)')
 
     // Comments saved with the chosen posts go out as replies to each post (one per post, same account).
     const withComment = usableDrafts.slice(0, fromDrafts).filter((d) => d.hasComment).length
@@ -496,10 +515,12 @@ export class RunService {
         // Already publishing: it finishes; the outcome is recorded as usual.
       }
     }
-    // Comments that haven't started don't go out either (a running one finishes).
+    // Comments and reposts that haven't started don't go out either (a running one finishes).
     for (const { id } of this.deps.db.all<{ id: string }>(
       `SELECT t.id FROM tasks t JOIN run_items i ON i.draft_id = t.draft_id AND i.kind = 'post'
-       WHERE i.run_id = :runId AND t.kind = 'reply' AND t.status = 'queued'`,
+       WHERE i.run_id = :runId AND t.kind = 'reply' AND t.status = 'queued'
+       UNION SELECT t.id FROM tasks t JOIN run_items i ON t.idempotency_key = 'engage:' || i.engagement_task_id
+       WHERE i.run_id = :runId AND i.kind = 'engagement' AND t.status = 'queued'`,
       { runId }
     )) {
       try {
@@ -974,11 +995,30 @@ export class RunService {
           const result = this.deps.engagement.create({ linkIds: [linkId], accountId, kind, dueAt, note: `From campaign “${config.name}”`, replyText: kind === 'reply' ? config.actions.commentText : '' })
           if (result.created.length) {
             const task = result.created[0]!
-            this.deps.db.run(
-              `INSERT INTO run_items (id, run_id, position, kind, status, account_id, engagement_task_id, created_at, updated_at)
-               VALUES (:id, :runId, (SELECT COALESCE(MAX(position), -1) + 1 FROM run_items WHERE run_id = :runId), 'engagement', 'saved', :accountId, :taskId, :now, :now)`,
-              { id: randomUUID(), runId, accountId, taskId: task.id, now: this.now().toISOString() }
-            )
+            // Reposts and comments run in the persistent task queue at the chosen time (never earlier),
+            // through the account's profile, and count only once X confirmed them. Likes stay tasks for you.
+            const automatic = kind === 'repost' || kind === 'reply'
+            const now = this.now().toISOString()
+            this.deps.db.transaction(() => {
+              this.deps.db.run(
+                `INSERT INTO run_items (id, run_id, position, kind, status, account_id, engagement_task_id, run_at, created_at, updated_at)
+                 VALUES (:id, :runId, (SELECT COALESCE(MAX(position), -1) + 1 FROM run_items WHERE run_id = :runId), 'engagement', :status, :accountId, :taskId, :runAt, :now, :now)`,
+                { id: randomUUID(), runId, accountId, taskId: task.id, status: automatic ? 'scheduled' : 'saved', runAt: automatic ? (dueAt ?? now) : null, now }
+              )
+              if (!automatic) return
+              this.deps.queue.enqueue({
+                kind: kind === 'repost' ? 'repost' : 'reply',
+                accountId,
+                draftId: null,
+                scheduleId: null,
+                label: kind === 'repost' ? 'Repost' : 'Comment on a post',
+                payload: kind === 'repost' ? { engagementTaskId: task.id, url: parsed.url, dueAt } : { engagementTaskId: task.id, parentPostId: parsed.postId, parentUrl: parsed.url, text: config.actions.commentText.trim(), dueAt },
+                // One queue task per engagement task: a retry or a restart never repeats it.
+                idempotencyKey: `engage:${task.id}`,
+                maxAttempts: this.deps.publishing.getSettings().maxAttempts,
+                runAfter: dueAt ?? now
+              })
+            })
             created++
             turn++
             break
@@ -1072,18 +1112,31 @@ export class RunService {
       { runId }
     )?.n
     if (comments) return this.deps.onChange()
+    const engagement = this.deps.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM run_items i JOIN tasks t ON t.idempotency_key = 'engage:' || i.engagement_task_id
+       WHERE i.run_id = :runId AND i.kind = 'engagement' AND t.status IN ('queued', 'running')`,
+      { runId }
+    )?.n
+    if (engagement) return this.deps.onChange()
     this.finish(runId, 'completed')
   }
 
-  private finish(runId: Id, status: 'completed' | 'stopped' | 'failed'): void {
+  private finish(runId: Id, requested: 'completed' | 'stopped' | 'failed'): void {
     const now = this.now().toISOString()
+    // "Completed" only when something actually went out: a run where every post, repost and comment
+    // failed (or still needs review) ends as Failed, never as a false Completed.
+    let status = requested
+    if (requested === 'completed') {
+      const c = this.countsOf(this.items(runId))
+      if (c.total > 0 && c.published === 0 && c.saved === 0 && c.failed + c.needsReview > 0) status = 'failed'
+    }
     this.deps.db.run('UPDATE automation_runs SET status = :status, finished_at = :now, updated_at = :now WHERE id = :id', { id: runId, status, now })
-    if (status === 'completed') {
+    if (status === 'completed' || (status === 'failed' && requested === 'completed')) {
       const counts = this.countsOf(this.items(runId))
       this.deps.notifier.notify({
-        tone: counts.failed || counts.needsReview ? 'warning' : 'success',
-        event: 'systemNotices',
-        title: 'Automation finished',
+        tone: status === 'failed' ? 'danger' : counts.failed || counts.needsReview ? 'warning' : 'success',
+        event: status === 'failed' ? 'taskFailures' : 'systemNotices',
+        title: status === 'failed' ? 'Campaign failed' : 'Automation finished',
         body: [
           counts.published && `${counts.published} published`,
           counts.comments.posted && `${counts.comments.posted} ${counts.comments.posted === 1 ? 'comment' : 'comments'} posted`,
@@ -1137,7 +1190,8 @@ export class RunService {
            (SELECT l.url FROM post_links l JOIN tasks t ON t.id = l.task_id WHERE t.schedule_id = s.id LIMIT 1) AS post_url,
            e.status AS engagement_status, e.kind AS engagement_kind, l2.url AS engagement_url,
            d.comment_enabled AS comment_enabled, d.comment_text AS comment_text,
-           r.status AS reply_status, r.result AS reply_result, r.error AS reply_error
+           r.status AS reply_status, r.result AS reply_result, r.error AS reply_error,
+           g.status AS engage_status, g.error AS engage_error
          FROM run_items i
          LEFT JOIN browser_profiles p ON p.id = i.profile_id
          LEFT JOIN accounts a ON a.id = i.account_id
@@ -1146,6 +1200,7 @@ export class RunService {
          LEFT JOIN engagement_tasks e ON e.id = i.engagement_task_id
          LEFT JOIN post_links l2 ON l2.id = e.link_id
          LEFT JOIN tasks r ON r.id = (SELECT id FROM tasks WHERE kind = 'reply' AND draft_id = i.draft_id ORDER BY created_at DESC LIMIT 1)
+         LEFT JOIN tasks g ON i.kind = 'engagement' AND g.idempotency_key = 'engage:' || i.engagement_task_id
          WHERE i.run_id = :runId ORDER BY i.position`,
         { runId }
       )
@@ -1168,11 +1223,11 @@ export class RunService {
         image: r.image as RunItem['image'],
         scheduleId: (r.schedule_id as string) ?? null,
         scheduleStatus: (r.schedule_status as ScheduleStatus) ?? null,
-        taskStatus: (r.task_status as TaskStatus) ?? null,
-        postUrl: (r.post_url as string) ?? null,
+        taskStatus: ((r.kind === 'engagement' ? r.engage_status : r.task_status) as TaskStatus) ?? null,
+        postUrl: r.kind === 'engagement' ? ((r.engagement_url as string) ?? null) : ((r.post_url as string) ?? null),
         comment: r.kind === 'post' && Number(r.comment_enabled) === 1 && String(r.comment_text ?? '').trim() ? this.commentOf(r) : null,
         runAt: (r.run_at as string) ?? null,
-        error: (r.error as string) ?? null
+        error: (r.kind === 'engagement' ? ((r.engage_error as string) ?? (r.error as string)) : (r.error as string)) ?? null
       }))
   }
 
@@ -1202,7 +1257,14 @@ export class RunService {
       else if (i.status === 'saved') c.saved++
       else if (i.status === 'skipped') c.skipped++
       else if (i.status === 'failed') c.failed++
-      else if (i.status === 'scheduled') {
+      else if (i.status === 'scheduled' && i.kind === 'engagement') {
+        // A campaign repost or comment: its own queue task's outcome.
+        if (i.taskStatus === 'succeeded') c.published++
+        else if (i.taskStatus === 'needs-review') c.needsReview++
+        else if (i.taskStatus === 'failed') c.failed++
+        else if (i.taskStatus === 'cancelled') c.skipped++
+        else c.scheduled++
+      } else if (i.status === 'scheduled') {
         if (i.scheduleStatus === 'completed') c.published++
         else if (i.scheduleStatus === 'needs-review') c.needsReview++
         else if (i.scheduleStatus === 'failed') c.failed++

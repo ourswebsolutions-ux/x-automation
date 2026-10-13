@@ -84,6 +84,16 @@ export class EngagementRepository {
   }
 
   /** Accounts (other than `accountId`) with an open or done task of these kinds on the post. */
+  /** This account already did (or has open) this kind of action on this post. */
+  hasDoneOrOpen(linkId: Id, accountId: Id, kind: EngagementKind, excludeId: Id | null = null): boolean {
+    return Boolean(
+      this.db.get(
+        "SELECT 1 AS x FROM engagement_tasks WHERE link_id = :linkId AND account_id = :accountId AND kind = :kind AND status IN ('open', 'done') AND id != :excludeId LIMIT 1",
+        { linkId, accountId, kind, excludeId: excludeId ?? '' }
+      )
+    )
+  }
+
   otherAccountsWithKinds(linkId: Id, kinds: readonly EngagementKind[], accountId: Id | null, excludeId: Id | null = null): string[] {
     const placeholders = kinds.map((_, i) => `:k${i}`).join(', ')
     const params: Record<string, string> = { linkId, accountId: accountId ?? '', excludeId: excludeId ?? '' }

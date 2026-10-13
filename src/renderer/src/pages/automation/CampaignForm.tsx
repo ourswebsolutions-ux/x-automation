@@ -103,7 +103,10 @@ export function CampaignForm({ value, onChange, plan, checking }: { value: Campa
         />
         {value.action !== 'post' && (
           <p className="text-xs text-fg-subtle">
-            {value.action === 'repost' ? 'Reposts' : 'Comments'} are tasks you complete in the profile — X Auto opens the post for you but doesn’t {value.action === 'repost' ? 'repost' : 'comment'} by itself. One of your accounts per post, never the same action from several of your accounts.
+            {value.action === 'repost'
+              ? 'X Auto reposts each chosen post at the run time from one of your accounts, in its own profile, and counts it only once the post shows as reposted on X.'
+              : 'X Auto posts your comment as a reply to the chosen post at the run time, from one of your accounts, and counts it only once X confirms it.'}{' '}
+            One of your accounts per post — never the same action from several of your accounts (that is coordinated engagement).{value.action === 'comment' ? ' One post per comment.' : ''}
           </p>
         )}
       </Section>
@@ -142,7 +145,7 @@ export function CampaignForm({ value, onChange, plan, checking }: { value: Campa
           <>
             <LinkPicker value={value.repostLinks} onChange={(repostLinks) => set({ repostLinks })} />
             {value.action === 'comment' && (
-              <Field label="Your comment" htmlFor="camp-comment" hint="Relevant to the post and written by you; copied into each task — you post it yourself. (To comment on your own new posts, add the comment in Create Post.)">
+              <Field label="Your comment" htmlFor="camp-comment" hint="Written by you and relevant to the post; posted as a reply to it at the run time. (To comment on your own new posts, add the comment in Create Post.)">
                 <Textarea id="camp-comment" rows={3} maxLength={280} value={value.commentText} onChange={(e) => set({ commentText: e.target.value })} />
               </Field>
             )}

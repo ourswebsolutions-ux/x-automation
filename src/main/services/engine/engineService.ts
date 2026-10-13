@@ -53,7 +53,7 @@ const MAX_LINE = 1024 * 1024
 const LOG_LINES = 200
 
 /** Only these commands are ever sent — the engine enforces the same list. */
-export type EngineCommand = 'engine.hello' | 'engine.health' | 'engine.shutdown' | 'browser.check' | 'browser.selfTest' | 'x.publish' | 'x.openPost' | 'x.findPost'
+export type EngineCommand = 'engine.hello' | 'engine.health' | 'engine.shutdown' | 'browser.check' | 'browser.selfTest' | 'x.publish' | 'x.openPost' | 'x.findPost' | 'x.repost'
 
 const responseSchema = z.union([
   z.object({ id: z.string().nullable(), ok: z.literal(true), result: z.record(z.string(), z.unknown()) }).strict(),

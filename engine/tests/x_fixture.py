@@ -12,6 +12,11 @@ Control (JSON over HTTP, loopback only):
                                                   ignored (Post does nothing), covered (something always covers Post)
   GET  /intent/post?in_reply_to=<id>              the reply composer (posts are recorded with inReplyTo)
   GET  /<handle>/with_replies                     that account's replies
+  GET  /<author>/status/<id>                      the post, with X's Repost button and menu (reposts recorded);
+                                                  modes: unavailable, repost-ignored (confirm does nothing),
+                                                  repost-silent (reposted, the button only updates on reload),
+                                                  repost-refused (X shows a notice and doesn't repost)
+  GET  /__reposts                                 reposts received so far
   GET  /__posts                                   posts received so far
   POST /__reset
   Cookie xh=<handle>                              that browser is signed in as <handle> instead
@@ -33,7 +38,7 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Compose / X (t
 <style>body{font-family:sans-serif;margin:0;display:flex}nav{width:220px;padding:12px;border-right:1px solid #ccc}
 main{flex:1;padding:16px}[contenteditable]{border:1px solid #888;min-height:80px;padding:8px;white-space:pre-wrap}
 #attachments img{width:80px;height:80px;object-fit:cover;margin:4px}[data-testid=toast]{position:fixed;bottom:16px;left:40%;background:#1d9bf0;color:#fff;padding:12px}</style></head>
-<body><nav><div data-testid="SideNav_AccountSwitcher_Button"><span>Test Person</span> <span>@__HANDLE__</span></div></nav>
+<body><nav>__NAV__<a data-testid="AppTabBar_Profile_Link" href="/__HANDLE__">Profile</a></nav>
 <main>__COMPOSER__</main>
 <script>
 const mode = "__MODE__";
@@ -90,6 +95,37 @@ COMPOSER = """<div data-testid="tweetTextarea_0" contenteditable="true" role="te
 <input type="file" data-testid="fileInput" multiple accept="image/*" style="display:none">
 <div id="attachments"></div><button data-testid="tweetButton" disabled>Post</button>"""
 
+POST_PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Post (test fixture)</title>
+<style>[data-testid=toast]{position:fixed;bottom:16px;left:40%;background:#1d9bf0;color:#fff;padding:12px}#menu{border:1px solid #888;padding:6px;width:160px}</style></head>
+<body><nav><div data-testid="SideNav_AccountSwitcher_Button"><span>Test Person</span> <span>@__HANDLE__</span></div></nav>
+<main><article data-testid="tweet"><div data-testid="tweetText">A post by @__AUTHOR__</div>
+<a href="/__AUTHOR__/status/__ID__"><time>now</time></a>
+<div role="group"><button data-testid="__BUTTON__">Repost</button></div></article>
+<article data-testid="tweet"><div data-testid="tweetText">A reply underneath</div><a href="/someone/status/1111"><time>now</time></a><button data-testid="retweet">Repost</button></article></main>
+<script>
+const mode = "__MODE__";
+const button = document.querySelector('article [data-testid="__BUTTON__"]');
+if (button && button.dataset.testid === 'retweet') button.addEventListener('click', () => {
+  const menu = document.createElement('div'); menu.id = 'menu'; menu.setAttribute('role', 'menu');
+  menu.innerHTML = '<div role="menuitem" data-testid="retweetConfirm" tabindex="0">Repost</div><div role="menuitem">Quote</div>';
+  document.body.appendChild(menu);
+  menu.querySelector('[data-testid="retweetConfirm"]').addEventListener('click', async () => {
+    if (mode === 'repost-ignored') return;
+    if (mode === 'repost-refused') {
+      const toast = document.createElement('div'); toast.setAttribute('data-testid', 'toast'); toast.textContent = 'You can’t repost this post.';
+      document.body.appendChild(toast); menu.remove(); return;
+    }
+    await fetch('/__repost', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({id: "__ID__"})});
+    menu.remove();
+    if (mode !== 'repost-silent') button.setAttribute('data-testid', 'unretweet');
+  });
+});
+</script></body></html>"""
+
+UNAVAILABLE = """<!doctype html><html><head><meta charset="utf-8"><title>Post (test fixture)</title></head>
+<body><nav><div data-testid="SideNav_AccountSwitcher_Button"><span>@__HANDLE__</span></div></nav>
+<main><div data-testid="error-detail">Hmm...this page doesn’t exist. Try searching for something else.</div></main></body></html>"""
+
 LOGIN = """<!doctype html><html><head><meta charset="utf-8"><title>Log in to X (test fixture)</title></head>
 <body><button data-testid="loginButton">Log in</button></body></html>"""
 
@@ -100,6 +136,7 @@ class Fixture:
         self.handle = "relay_test"
         self.posts: list[dict[str, Any]] = []
         self.opened: list[str] = []
+        self.reposts: list[dict[str, str]] = []
         self._next_id = 1900000000000000001
         self.lock = threading.Lock()
         fixture = self
@@ -139,7 +176,9 @@ class Fixture:
                     if path == "/intent/post" and not reply_to.isdigit():
                         return self._send(400, "in_reply_to is required", "text/plain")
                     composer = "" if fixture.mode == "no-composer" else COMPOSER
-                    page = PAGE.replace("__COMPOSER__", composer).replace("__MODE__", fixture.mode).replace("__HANDLE__", self._handle()).replace("__REPLY_TO__", reply_to)
+                    # collapsed-nav: like X's narrow layout — the account button shows only an avatar.
+                    nav = '<div data-testid="SideNav_AccountSwitcher_Button"><img alt=""></div>' if fixture.mode == "collapsed-nav" else '<div data-testid="SideNav_AccountSwitcher_Button"><span>Test Person</span> <span>@__HANDLE__</span></div>'
+                    page = PAGE.replace("__NAV__", nav).replace("__COMPOSER__", composer).replace("__MODE__", fixture.mode).replace("__HANDLE__", self._handle()).replace("__REPLY_TO__", reply_to)
                     return self._send(200, page)
                 if path == "/i/flow/login":
                     return self._send(200, LOGIN)
@@ -164,10 +203,23 @@ class Fixture:
                         return self._send(302, "", headers={"location": "/i/flow/login"})
                     with fixture.lock:
                         fixture.opened.append(path)
-                    return self._send(200, f"<!doctype html><html><head><meta charset='utf-8'><title>Post (test fixture)</title></head><body><article>{path}</article></body></html>")
+                    author, _, post_id = path.strip("/").partition("/status/")
+                    viewer = self._handle()
+                    if fixture.mode == "unavailable":
+                        return self._send(200, UNAVAILABLE.replace("__HANDLE__", viewer))
+                    with fixture.lock:
+                        reposted = any(r["id"] == post_id and r["handle"] == viewer for r in fixture.reposts)
+                    page = (
+                        POST_PAGE.replace("__HANDLE__", viewer).replace("__AUTHOR__", author).replace("__ID__", post_id)
+                        .replace("__MODE__", fixture.mode).replace("__BUTTON__", "unretweet" if reposted else "retweet")
+                    )
+                    return self._send(200, page)
                 if path == "/__posts":
                     with fixture.lock:
                         return self._send(200, json.dumps(fixture.posts), "application/json")
+                if path == "/__reposts":
+                    with fixture.lock:
+                        return self._send(200, json.dumps(fixture.reposts), "application/json")
                 if path == "/__opened":
                     with fixture.lock:
                         return self._send(200, json.dumps(fixture.opened), "application/json")
@@ -182,6 +234,11 @@ class Fixture:
                         fixture._next_id += 1
                         fixture.posts.append(post)
                     return self._send(200, json.dumps(post), "application/json")
+                if path == "/__repost":
+                    body = self._json()
+                    with fixture.lock:
+                        fixture.reposts.append({"id": str(body.get("id", "")), "handle": self._handle()})
+                    return self._send(200, "{}", "application/json")
                 if path == "/__control":
                     body = self._json()
                     fixture.mode = body.get("mode", fixture.mode)
@@ -191,6 +248,7 @@ class Fixture:
                     with fixture.lock:
                         fixture.posts.clear()
                         fixture.opened.clear()
+                        fixture.reposts.clear()
                     fixture.mode = "ok"
                     return self._send(200, "{}", "application/json")
                 return self._send(404, "not found", "text/plain")
@@ -217,6 +275,7 @@ class Fixture:
         with self.lock:
             self.posts.clear()
             self.opened.clear()
+            self.reposts.clear()
         self.mode = "ok"
 
 

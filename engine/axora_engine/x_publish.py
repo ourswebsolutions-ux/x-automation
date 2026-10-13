@@ -32,6 +32,9 @@ SELECTORS = {
     "file_input": 'input[data-testid="fileInput"]',
     "attachments": '[data-testid="attachments"]',
     "account_switcher": '[data-testid="SideNav_AccountSwitcher_Button"]',
+    # The side navigation's Profile link (href "/<handle>"): present even when the navigation is
+    # collapsed to icons and the account button shows no @handle.
+    "profile_link": 'a[data-testid="AppTabBar_Profile_Link"]',
     "toast": '[data-testid="toast"]',
     "login": '[data-testid="loginButton"], [data-testid="login"], input[autocomplete="username"]',
     "post": 'article[data-testid="tweet"]',
@@ -39,6 +42,12 @@ SELECTORS = {
     # Hashtag / mention suggestions X opens while the last word is "#tag" or "@name". They cover the
     # Post button, so the click never reaches it.
     "typeahead": '[data-testid^="typeaheadDropdown"], [role="listbox"]',
+    # Repost: the post's Repost button opens a menu whose first item reposts; once reposted, the
+    # same button becomes "unretweet" (Undo repost) — that state is the confirmation.
+    "repost_button": '[data-testid="retweet"]',
+    "reposted_button": '[data-testid="unretweet"]',
+    "repost_confirm": '[data-testid="retweetConfirm"]',
+    "post_unavailable": '[data-testid="error-detail"], [data-testid="emptyState"]',
 }
 
 TRAILING_TOKEN = re.compile(r"[#@][^\s#@]+$")
@@ -100,12 +109,19 @@ def _on_login_page(url: str) -> bool:
 
 
 async def _signed_in_handle(page: Any) -> str | None:
-    """The @handle shown in the side navigation's account button, if visible."""
-    if not await _first_visible(page, SELECTORS["account_switcher"], 5_000):
-        return None
-    text = await page.locator(SELECTORS["account_switcher"]).first.inner_text()
-    match = re.search(r"@([A-Za-z0-9_]{1,15})", text)
-    return match.group(1) if match else None
+    """The signed-in @handle: from the side navigation's account button, or — when the navigation is
+    collapsed and shows no text — from its Profile link."""
+    if await _first_visible(page, SELECTORS["account_switcher"], 5_000):
+        text = await page.locator(SELECTORS["account_switcher"]).first.inner_text()
+        match = re.search(r"@([A-Za-z0-9_]{1,15})", text)
+        if match:
+            return match.group(1)
+    link = page.locator(SELECTORS["profile_link"]).first
+    if await link.count():
+        match = re.match(r"^/([A-Za-z0-9_]{1,15})/?$", urlsplit(await link.get_attribute("href") or "").path)
+        if match:
+            return match.group(1)
+    return None
 
 
 async def find_post(connect: Any, params: dict[str, Any]) -> dict[str, Any]:
@@ -185,6 +201,126 @@ async def _close_typeahead(page: Any, composer: Any) -> bool:
 
 
 POST_URL = re.compile(r"^https://x\.com/(?:[A-Za-z0-9_]{1,15}|i)/status/\d{1,25}$")
+
+
+async def repost(connect: Any, params: dict[str, Any]) -> dict[str, Any]:
+    """Repost one post from the profile's own session, and confirm it from the post's own state.
+
+    Success is only reported when the post's Repost button has turned into "Undo repost" (X's own
+    state). A post that is already reposted from this account is reported as such — never reposted
+    twice. Every failure says whether the final click happened (`submitted`).
+    """
+    endpoint = validate_endpoint(require_str(params, "endpoint", 300))
+    url = require_str(params, "url", 200)
+    if not POST_URL.match(url):
+        raise EngineError("INVALID_PARAMS", "Only links to posts on x.com can be reposted.")
+    post_id = url.rsplit("/", 1)[1]
+    expected = params.get("expectedHandle")
+    if expected is not None and (not isinstance(expected, str) or not HANDLE.match(expected)):
+        raise EngineError("INVALID_PARAMS", "expectedHandle must be an X username.")
+    timeout_ms = require_int(params, "timeoutMs", 5_000, 120_000, 30_000)
+    confirm_ms = require_int(params, "confirmTimeoutMs", 5_000, 120_000, 20_000)
+    base = _base_url(params)
+    submitted = False
+
+    progress("attach")
+    browser = await connect(endpoint, timeout_ms)
+    try:
+        contexts = browser.contexts
+        if not contexts:
+            raise EngineError("NO_CONTEXT", "The browser exposed no existing session, so nothing was reposted.")
+        page = await contexts[0].new_page()
+        try:
+            page.set_default_timeout(timeout_ms)
+            progress("open-post")
+            await page.goto(base + urlsplit(url).path, wait_until="domcontentloaded")
+            if _on_login_page(page.url):
+                raise EngineError("SESSION_EXPIRED", "This profile is signed out of X. Sign in in IX Browser, then try again.")
+            seen = await _signed_in_handle(page)
+            if seen is None and await page.locator(SELECTORS["login"]).count():
+                raise EngineError("SESSION_EXPIRED", "This profile is signed out of X. Sign in in IX Browser, then try again.")
+            account_check = "skipped"
+            if expected:
+                if seen is None:
+                    account_check = "unknown"
+                elif seen.lower() != expected.lower():
+                    raise EngineError("ACCOUNT_MISMATCH", f"This profile is signed in to X as @{seen}, not @{expected}. Nothing was reposted.")
+                else:
+                    account_check = "match"
+
+            # The post itself (not a reply under it): the article that links to its own id.
+            article = page.locator(SELECTORS["post"]).filter(has=page.locator(f'a[href*="/status/{post_id}"]')).first
+            if not await _first_visible(page, f'{SELECTORS["post"]} a[href*="/status/{post_id}"]', timeout_ms):
+                if await page.locator(SELECTORS["post_unavailable"]).count():
+                    raise EngineError("POST_UNAVAILABLE", "This post is unavailable on X (deleted, protected or hidden). Nothing was reposted.")
+                raise EngineError("POST_NOT_FOUND", "The post did not load on X. Nothing was reposted.", True)
+
+            def done(how: str, already: bool) -> dict[str, Any]:
+                return {"ok": True, "url": url, "postId": post_id, "handle": seen, "accountCheck": account_check, "alreadyReposted": already, "verifiedBy": how}
+
+            if await article.locator(SELECTORS["reposted_button"]).count():
+                return done("button-state", True)
+            button = article.locator(SELECTORS["repost_button"]).first
+            if not await button.count():
+                raise EngineError("REPOST_UNAVAILABLE", "This post has no Repost button for this account (reposts may be limited by its author). Nothing was reposted.")
+            try:
+                await button.click(trial=True, timeout=5_000)
+            except Exception:  # noqa: BLE001
+                raise EngineError("REPOST_BLOCKED", "Something on X's page covered the Repost button, so it was never clicked. Nothing was reposted.", True) from None
+            await button.click(timeout=10_000)  # opens the menu only; nothing is reposted yet
+            confirm = page.locator(SELECTORS["repost_confirm"]).first
+            if not await _first_visible(page, SELECTORS["repost_confirm"], 10_000):
+                raise EngineError("REPOST_MENU_MISSING", "X did not show its Repost menu. Nothing was reposted.", True)
+            try:
+                await confirm.click(trial=True, timeout=5_000)
+            except Exception:  # noqa: BLE001
+                raise EngineError("REPOST_BLOCKED", "Something on X's page covered the Repost menu, so it was never clicked. Nothing was reposted.", True) from None
+
+            # Point of no return: from here on the repost may exist.
+            progress("submit")
+            submitted = True
+            await confirm.click(timeout=10_000)
+
+            progress("confirm")
+            deadline = time.monotonic() + confirm_ms / 1000
+            toast_seen_at: float | None = None
+            while time.monotonic() < deadline:
+                if await article.locator(SELECTORS["reposted_button"]).count():
+                    return done("button-state", False)
+                if await page.locator(SELECTORS["toast"]).count():
+                    toast_seen_at = toast_seen_at or time.monotonic()
+                    # A notice while the post still offers Repost: X refused it (e.g. reposts limited).
+                    if time.monotonic() - toast_seen_at > 3 and await article.locator(SELECTORS["repost_button"]).count():
+                        notice = (await page.locator(SELECTORS["toast"]).first.inner_text()).strip().replace("\n", " ")[:120]
+                        raise EngineError("REJECTED", f"X did not repost it (X said: {notice}).", False, submitted=True)
+                await asyncio.sleep(0.25)
+            # No state change yet: load the post again and read its state from X.
+            await page.reload(wait_until="domcontentloaded")
+            fresh = page.locator(SELECTORS["post"]).filter(has=page.locator(f'a[href*="/status/{post_id}"]')).first
+            if await _first_visible(page, f'{SELECTORS["post"]} a[href*="/status/{post_id}"]', timeout_ms):
+                if await fresh.locator(SELECTORS["reposted_button"]).count():
+                    return done("reload", False)
+                if await fresh.locator(SELECTORS["repost_button"]).count():
+                    notice = ""
+                    if await page.locator(SELECTORS["toast"]).count():
+                        notice = (await page.locator(SELECTORS["toast"]).first.inner_text()).strip().replace("\n", " ")[:120]
+                    raise EngineError("NOT_SENT", f"X did not repost it: after a reload the post still shows Repost, not Undo repost{f' (X said: {notice})' if notice else ''}. Nothing was reposted.", False, submitted=True)
+            raise EngineError("OUTCOME_UNKNOWN", "The repost was clicked, but X's page did not show whether it went through.", False, submitted=True)
+        finally:
+            await page.close(run_before_unload=False)
+    except EngineError as error:
+        if error.submitted is None:
+            error.submitted = submitted
+        raise
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — Playwright raises several error types
+        detail = str(exc).splitlines()[0][:160] if str(exc) else exc.__class__.__name__
+        if submitted:
+            raise EngineError("OUTCOME_UNKNOWN", f"The repost was clicked, but confirming it failed ({detail}).", False, submitted=True) from None
+        raise EngineError("REPOST_FAILED", f"Reposting stopped before anything was clicked ({detail}).", True, submitted=False) from None
+    finally:
+        await browser.close()
 
 
 async def open_post(connect: Any, params: dict[str, Any]) -> dict[str, Any]:

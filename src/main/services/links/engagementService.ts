@@ -116,6 +116,10 @@ export class EngagementService {
       add('duplicate', `There is already an open ${KIND_LABEL[input.kind]} task for this post${account ? ` and ${account.label}` : ''}.`)
     }
 
+    if (account && AMPLIFYING_KINDS.includes(input.kind) && this.deps.repo.hasDoneOrOpen(input.linkId, account.id, input.kind, excludeId)) {
+      // A post is liked / reposted once per account: done already means there is nothing to do again.
+      add('duplicate', `${account.label} has already ${input.kind === 'repost' ? 'reposted' : input.kind === 'like' ? 'liked' : 'quoted'} this post (or has it planned).`)
+    }
     if (account && AMPLIFYING_KINDS.includes(input.kind)) {
       const owner = link.accountId ? this.deps.accounts.get(link.accountId) : link.handle ? this.deps.accounts.byHandle(link.handle) : null
       if (owner && owner.id !== account.id) {

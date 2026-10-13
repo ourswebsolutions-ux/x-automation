@@ -31,7 +31,7 @@ const errOf = async (p: Promise<unknown> | (() => unknown)) => { try { await (ty
 const file = process.argv[2]!
 rmSync(file, { force: true })
 const db = new SqliteDatabase(file).open()
-check('migrate → v14', migrate(db, log as never) === 14)
+check('migrate → v15', migrate(db, log as never) === 15)
 const at = new Date().toISOString()
 db.exec(`INSERT INTO browser_profiles (id, external_id, name, synced_at, first_seen_at, availability, run_state) VALUES
   ('aaaaaaaa-0000-4000-8000-000000000001','1','Alpha','${at}','${at}','available','closed'),('aaaaaaaa-0000-4000-8000-000000000002','2','Beta','${at}','${at}','available','closed'),('aaaaaaaa-0000-4000-8000-000000000003','3','Gamma','${at}','${at}','unavailable','closed'),('aaaaaaaa-0000-4000-8000-000000000004','4','Delta','${at}','${at}','available','closed')`)
@@ -194,7 +194,7 @@ await runs.stop(run4.id)
 const run5 = await runs.start({ ...base(), name: 'Image fails → without', failure: { ...base().failure, onImageFailure: 'without-image' }, targets: { ...base().targets, scope: 'selected', profileIds: ['aaaaaaaa-0000-4000-8000-000000000001'] } })
 check('image failure + explicit "without image" → published text-only, marked so', (await waitFor(() => runs.details(run5.id).run.status === 'completed')) && itemsOf(run5.id).every((i) => i.image === 'skipped' && !i.imageAssetId && i.scheduleStatus === 'completed'))
 const run6 = await runs.start({ ...base(), name: 'Image fails → skip', failure: { ...base().failure, onImageFailure: 'skip' }, targets: { ...base().targets, scope: 'selected', profileIds: ['aaaaaaaa-0000-4000-8000-000000000001'] } })
-check('image failure + "skip" → posts skipped, never claimed attached', (await waitFor(() => runs.details(run6.id).run.status === 'completed')) && itemsOf(run6.id).every((i) => i.status === 'failed' && i.image === 'failed'))
+check('image failure + "skip" → posts skipped, never claimed attached; nothing went out, so the run is Failed (not Completed)', (await waitFor(() => runs.details(run6.id).run.status === 'failed')) && itemsOf(run6.id).every((i) => i.status === 'failed' && i.image === 'failed'))
 imgMode = 'ok'
 genMode = 'auth'
 const run7 = await runs.start({ ...base(), name: 'Text fails → pause', failure: { ...base().failure, onTextFailure: 'pause' }, targets: { ...base().targets, scope: 'selected', profileIds: ['aaaaaaaa-0000-4000-8000-000000000001'] } })
@@ -229,11 +229,15 @@ check('scheduled run: posts scheduled for later', itemsOf(run11.id).every((i) =>
 const stopped = await runs.stop(run11.id)
 check('stop: waiting posts cancelled and returned to drafts', stopped.status === 'stopped' && itemsOf(run11.id).every((i) => i.status === 'skipped') && itemsOf(run11.id).every((i) => db.get<{ status: string }>('SELECT status FROM drafts WHERE id = :id', { id: i.draftId })?.status === 'ready'))
 
-// engagement actions are planned as manual tasks, one account per post
+// engagement: reposts and comments become queue tasks (done by X Auto, confirmed on X); likes stay tasks for you
 const run12 = await runs.start({ ...base(), name: 'Engage', actions: { publish: false, saveDrafts: false, repost: true, comment: true, like: true, engagementLinks: ['https://x.com/someone/status/77'], commentText: 'Great insight!' } })
 const eng = itemsOf(run12.id).filter((i) => i.kind === 'engagement')
-check('engagement: repost/comment/like planned as tasks for the user (not performed)', eng.length === 3 && db.get<{ n: number }>("SELECT COUNT(*) AS n FROM engagement_tasks WHERE status = 'open'")!.n === 3)
+const engQueue = db.all<{ kind: string; status: string; payload: string }>("SELECT kind, status, payload FROM tasks WHERE idempotency_key LIKE 'engage:%'")
+check('engagement: the repost and the comment are queue tasks, the like a task for you', eng.length === 3 && engQueue.length === 2 && engQueue.some((t) => t.kind === 'repost') && engQueue.some((t) => t.kind === 'reply' && JSON.parse(t.payload).text === 'Great insight!') && eng.filter((i) => i.status === 'saved').length === 1, JSON.stringify(engQueue.map((t) => t.kind)))
+check('… not counted as done before X confirms them (run still running, tasks still open)', runs.details(run12.id).run.status === 'publishing' && db.get<{ n: number }>("SELECT COUNT(*) AS n FROM engagement_tasks WHERE status = 'open'")!.n === 3)
 check('… one of your accounts per action (no coordinated engagement)', db.get<{ n: number }>("SELECT COUNT(DISTINCT kind) AS n FROM engagement_tasks")!.n === 3 && db.get<{ n: number }>("SELECT COUNT(*) AS n FROM engagement_tasks WHERE kind IN ('like','repost')")!.n === 2)
+await runs.stop(run12.id)
+check('… stopping it cancels the waiting repost and comment', db.get<{ n: number }>("SELECT COUNT(*) AS n FROM tasks WHERE idempotency_key LIKE 'engage:%' AND status = 'cancelled'")!.n === 2)
 
 // recovery: a run interrupted while generating is paused, not regenerated
 db.run("UPDATE automation_runs SET status = 'generating' WHERE id = :id", { id: run12.id })
@@ -321,28 +325,30 @@ check('… first profile posts the draft, the other an independent copy with the
     schedule: { ...base().schedule, when: 'schedule', startAt: runAt }
   }
   const rp = runs.plan(repostCfg)
-  check('repost campaign: valid without selecting posts; one repost task planned', rp.ok && rp.posts === 0 && rp.engagementTasks === 1, JSON.stringify(rp.problems))
+  check('repost campaign: valid without selecting posts; one repost planned', rp.ok && rp.posts === 0 && rp.engagementTasks === 1, JSON.stringify(rp.problems))
   const pubBefore = published.length
   const rr = await runs.start(repostCfg)
   const ritems = itemsOf(rr.id)
-  const task = db.get<{ kind: string; due_at: string | null; status: string }>('SELECT kind, due_at, status FROM engagement_tasks WHERE id = (SELECT engagement_task_id FROM run_items WHERE run_id = :id)', { id: rr.id })
-  check('… a repost task for one account, due at the campaign run time, nothing published', ritems.length === 1 && ritems[0]!.kind === 'engagement' && task?.kind === 'repost' && task.due_at === runAt && task.status === 'open' && published.length === pubBefore, JSON.stringify(task))
-  check('… the campaign completes (the repost itself is done by you)', await waitFor(() => runs.details(rr.id).run.status === 'completed', 4000), runs.details(rr.id).run.status)
+  const task = db.get<{ id: string; kind: string; due_at: string | null; status: string }>('SELECT id, kind, due_at, status FROM engagement_tasks WHERE id = (SELECT engagement_task_id FROM run_items WHERE run_id = :id)', { id: rr.id })
+  const queued = db.get<{ kind: string; status: string; run_after: string; account_id: string }>('SELECT kind, status, run_after, account_id FROM tasks WHERE idempotency_key = :key', { key: `engage:${task?.id}` })
+  check('… one repost for one account, queued for exactly the run time (not now), nothing published', ritems.length === 1 && ritems[0]!.kind === 'engagement' && task?.kind === 'repost' && task.due_at === runAt && queued?.kind === 'repost' && queued.status === 'queued' && queued.run_after === runAt && published.length === pubBefore, JSON.stringify({ task, queued }))
+  check('… shown as Scheduled, and the campaign stays running until X confirms the repost (no false "Completed")', ritems[0]!.status === 'scheduled' && ritems[0]!.taskStatus === 'queued' && runs.details(rr.id).run.status === 'publishing' && runs.details(rr.id).run.counts.scheduled === 1, runs.details(rr.id).run.status)
   // Comment campaign: your comment text, one of your accounts per post (never the same comment
   // from several accounts), and the campaign result follows the task's real status.
   db.run("UPDATE automation_runs SET status = 'stopped' WHERE status IN ('generating', 'awaiting-approval', 'paused', 'publishing')")
   const commentCfg: AutomationConfig = {
     ...repostCfg,
     name: 'Comment campaign',
-    actions: { ...repostCfg.actions, repost: false, comment: true, commentText: 'Great write-up — the section on caching helped me.', engagementLinks: ['https://x.com/author_one/status/1888000000000000011', 'https://x.com/author_two/status/1888000000000000012'] }
+    actions: { ...repostCfg.actions, repost: false, comment: true, commentText: 'Great write-up — the section on caching helped me.', engagementLinks: ['https://x.com/author_one/status/1888000000000000011'] }
   }
-  check('comment campaign: comment text required', runs.plan({ ...commentCfg, actions: { ...commentCfg.actions, commentText: ' ' } }).problems.some((p) => p.blocking && p.message.includes('comment text')))
+  check('comment campaign: comment text required', runs.plan({ ...commentCfg, actions: { ...commentCfg.actions, commentText: ' ' } }).problems.some((p) => p.blocking && p.message.includes('Write the comment')))
+  check('comment campaign: the same comment on several posts is refused (repetitive automated replies)', runs.plan({ ...commentCfg, actions: { ...commentCfg.actions, engagementLinks: ['https://x.com/author_one/status/1888000000000000011', 'https://x.com/author_two/status/1888000000000000012'] } }).problems.some((p) => p.blocking && p.message.includes('one post')))
   const cplan = runs.plan(commentCfg)
-  check('comment campaign: one comment task per post', cplan.ok && cplan.engagementTasks === 2, JSON.stringify(cplan.problems))
+  check('comment campaign: one comment on one post', cplan.ok && cplan.engagementTasks === 1, JSON.stringify(cplan.problems))
   const cr = await runs.start(commentCfg)
-  const ctasks = db.all<{ link_id: string; account_id: string; kind: string; reply_text: string; due_at: string | null }>('SELECT link_id, account_id, kind, reply_text, due_at FROM engagement_tasks WHERE id IN (SELECT engagement_task_id FROM run_items WHERE run_id = :id)', { id: cr.id })
-  check('… reply tasks carry your comment and the run time; each post handled by one account', ctasks.length === 2 && ctasks.every((t) => t.kind === 'reply' && t.reply_text === 'Great write-up — the section on caching helped me.' && t.due_at === runAt) && new Set(ctasks.map((t) => t.link_id)).size === 2, JSON.stringify(ctasks))
-  check('… the work is shared out between your accounts (not one account for everything)', new Set(ctasks.map((t) => t.account_id)).size === 2)
+  const ctasks = db.all<{ id: string; link_id: string; account_id: string; kind: string; reply_text: string; due_at: string | null }>('SELECT id, link_id, account_id, kind, reply_text, due_at FROM engagement_tasks WHERE id IN (SELECT engagement_task_id FROM run_items WHERE run_id = :id)', { id: cr.id })
+  const cq = db.get<{ kind: string; run_after: string; payload: string }>('SELECT kind, run_after, payload FROM tasks WHERE idempotency_key = :key', { key: `engage:${ctasks[0]?.id}` })
+  check('… the comment is queued as a reply to that post at exactly the run time, with your text', ctasks.length === 1 && ctasks[0]!.kind === 'reply' && cq?.kind === 'reply' && cq.run_after === runAt && JSON.parse(cq.payload).text === 'Great write-up — the section on caching helped me.' && JSON.parse(cq.payload).parentPostId === '1888000000000000011', JSON.stringify({ ctasks, cq }))
   const citems = itemsOf(cr.id)
   check('… each result records profile/account, target post, action', citems.every((i) => i.kind === 'engagement' && i.accountId && i.text?.startsWith('Comment on https://x.com/') && i.engagementStatus === 'open'))
   const firstTask = db.get<{ id: string }>('SELECT engagement_task_id AS id FROM run_items WHERE run_id = :id ORDER BY position LIMIT 1', { id: cr.id })!

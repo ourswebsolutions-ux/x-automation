@@ -98,7 +98,7 @@ export interface ScheduledPost {
   updatedAt: Timestamp
 }
 
-export type TaskKind = 'publish' | 'reply' | 'generate-text' | 'generate-image' | 'sync-profiles'
+export type TaskKind = 'publish' | 'reply' | 'repost' | 'generate-text' | 'generate-image' | 'sync-profiles'
 /** needs-review: the task may already have taken effect; it is never retried automatically. */
 export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'needs-review'
 
@@ -109,8 +109,8 @@ export interface PublishResult {
   /** Handle seen in the post link (may differ from the account record). */
   handle: string | null
   /** How the outcome was established. */
-  /** post-link: X's confirmation · profile-check: found on the account's profile after an unconfirmed submit · user: you confirmed it. */
-  verifiedBy: 'post-link' | 'profile-check' | 'user'
+  /** post-link: X's confirmation · profile-check: found on the account's profile after an unconfirmed submit · post-state: the post shows it as reposted (X's own Undo repost state) · user: you confirmed it. */
+  verifiedBy: 'post-link' | 'profile-check' | 'post-state' | 'user'
 }
 
 export interface Task {

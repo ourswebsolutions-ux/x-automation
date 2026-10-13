@@ -29,6 +29,8 @@ const TICK_MS = 15_000
  */
 export class Scheduler {
   private timer: NodeJS.Timeout | null = null
+  /** One-shot wake-up at the next pending slot's exact time (when it comes before the next tick). */
+  private exact: NodeJS.Timeout | null = null
 
   constructor(private readonly deps: Deps) {}
 
@@ -69,11 +71,31 @@ export class Scheduler {
     this.stop()
     this.timer = setInterval(() => this.tick(), this.deps.tickMs ?? TICK_MS)
     this.timer.unref?.()
+    this.armExact()
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer)
     this.timer = null
+    if (this.exact) clearTimeout(this.exact)
+    this.exact = null
+  }
+
+  /**
+   * Posts go out at their chosen time, not up to one tick later: when the next pending slot falls
+   * before the next tick, a one-shot timer fires at exactly that moment. Never earlier — `due()` only
+   * returns slots whose time has come.
+   */
+  private armExact(): void {
+    if (this.exact) clearTimeout(this.exact)
+    this.exact = null
+    if (!this.timer) return
+    const next = this.deps.db.get<{ at: string | null }>("SELECT MIN(run_at) AS at FROM scheduled_posts WHERE status = 'pending'")?.at
+    if (!next) return
+    const delay = new Date(next).getTime() - this.now().getTime()
+    if (delay < 0 || delay > (this.deps.tickMs ?? TICK_MS)) return
+    this.exact = setTimeout(() => this.tick(), delay + 5)
+    this.exact.unref?.()
   }
 
   /** Checks now (also called after the computer wakes up). */
@@ -85,6 +107,7 @@ export class Scheduler {
     } catch (error) {
       this.deps.log.error('The scheduler hit an error', error)
     }
+    this.armExact()
   }
 
   /** Queues due slots within the grace period; marks older ones as missed. Returns how many were missed. */

@@ -24,6 +24,23 @@ const RUN_STATUS = RUN_LABEL
 function itemState(i: RunItem): { label: string; tone: Tone } {
   if (i.kind === 'engagement') {
     const what = i.text?.startsWith('Repost') ? 'Repost' : i.text?.startsWith('Comment') ? 'Comment' : 'Task'
+    // Reposts and comments done by X Auto: the outcome of their own task, confirmed on X.
+    if (i.status === 'scheduled') {
+      switch (i.taskStatus) {
+        case 'succeeded':
+          return { label: what === 'Repost' ? 'Reposted' : 'Comment posted', tone: 'success' }
+        case 'running':
+          return { label: what === 'Repost' ? 'Reposting' : 'Posting comment', tone: 'info' }
+        case 'failed':
+          return { label: 'Failed', tone: 'danger' }
+        case 'needs-review':
+          return { label: 'Needs review', tone: 'warning' }
+        case 'cancelled':
+          return { label: 'Cancelled', tone: 'neutral' }
+        default:
+          return { label: 'Scheduled', tone: 'info' }
+      }
+    }
     if (i.engagementStatus === 'done') return { label: `${what} done`, tone: 'success' }
     if (i.engagementStatus === 'skipped') return { label: `${what} skipped`, tone: 'neutral' }
     return { label: `${what} task for you`, tone: 'neutral' }
@@ -236,9 +253,14 @@ export function RunPanel({ runId }: { runId: string }) {
                     </>
                   )}
                   {i.postUrl && <IconButton icon={ExternalLink} label="View on X" size="sm" onClick={() => void relay.shell.openExternal(i.postUrl!)} />}
-                  {i.kind === 'engagement' && (
+                  {i.kind === 'engagement' && i.status !== 'scheduled' && (
                     <Button size="sm" variant="ghost" onClick={() => navigate('/links?view=engagement')}>
                       Open tasks
+                    </Button>
+                  )}
+                  {i.kind === 'engagement' && i.taskStatus === 'needs-review' && (
+                    <Button size="sm" variant="ghost" onClick={() => document.getElementById('posting-queue')?.scrollIntoView({ behavior: 'smooth' })}>
+                      Review
                     </Button>
                   )}
                   {i.scheduleStatus === 'needs-review' && (

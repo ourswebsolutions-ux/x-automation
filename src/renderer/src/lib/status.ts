@@ -30,7 +30,8 @@ export const SCHEDULE_STATUS: Record<ScheduleStatus, StatusMeta> = {
 
 export const TASK_KIND: Record<TaskKind, string> = {
   publish: 'Publish post',
-  reply: 'Reply',
+  reply: 'Comment',
+  repost: 'Repost',
   'generate-text': 'Generate text',
   'generate-image': 'Generate image',
   'sync-profiles': 'Sync profiles'

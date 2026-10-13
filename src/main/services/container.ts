@@ -274,6 +274,8 @@ export async function createServices(): Promise<AppServices> {
   queue.register(new PublishHandler(publishDeps))
   // Comments saved with a post: the same account replies to its own confirmed post.
   queue.register(new PublishHandler(publishDeps, 'reply'))
+  // Campaign reposts: performed in the account's profile and confirmed from the post's own state on X.
+  queue.register(new PublishHandler(publishDeps, 'repost'))
   const scheduler = new Scheduler({
     db: database.db,
     schedules,

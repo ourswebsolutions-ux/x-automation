@@ -92,14 +92,14 @@ export function CampaignsPage() {
   }, [key])
 
   const blocking = plan?.problems.filter((p) => p.blocking) ?? []
-  const warnings = plan?.problems.filter((p) => !p.blocking && !/planned as tasks|left out|Only \d+ draft|don’t fit/.test(p.message)) ?? []
+  const warnings = plan?.problems.filter((p) => !p.blocking && !/planned as tasks|left out|Only \d+ draft|don’t fit|coordinated engagement/.test(p.message)) ?? []
   const busy = active.data && ['generating', 'awaiting-approval', 'paused'].includes(active.data.status)
   const canStart = Boolean(plan?.ok) && !checking && !busy && !starting
   const summary = !plan
     ? ''
     : choices.action === 'post'
       ? `${pluralize(plan.posts, 'post')} on ${pluralize(plan.profiles.eligible, 'profile')}${plan.fromDrafts > 1 ? ` (${plan.fromDrafts} posts × ${plan.profiles.eligible} profiles)` : ''}`
-      : `${pluralize(plan.engagementTasks, choices.action === 'repost' ? 'repost task' : 'comment task')} for your profiles`
+      : `${pluralize(plan.engagementTasks, choices.action === 'repost' ? 'repost' : 'comment')} from your profiles`
 
   const start = async () => {
     setStarting(true)
@@ -118,7 +118,7 @@ export function CampaignsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={NAV_ITEMS.campaigns.label} description="Post your saved posts (with their comments) from every synchronized profile, now or at a date and time — or plan repost and comment tasks." />
+      <PageHeader title={NAV_ITEMS.campaigns.label} description="Post your saved posts (with their comments) from every synchronized profile, repost posts, or comment on a post — now or at a date and time." />
 
       {viewRun && <RunPanel runId={viewRun} />}
 

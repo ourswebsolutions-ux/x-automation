@@ -101,7 +101,7 @@ check('silent proxy → timeout after limit', !timeout.ok && timeout.error!.incl
 const path = process.argv[2]!
 for (const s of ['', '-wal', '-shm']) rmSync(path + s, { force: true })
 const db = new SqliteDatabase(path).open()
-check('migrate → v14', migrate(db, log) === 14)
+check('migrate → v15', migrate(db, log) === 15)
 db.exec("INSERT INTO provider_configs (id, kind, name, endpoint, created_at, updated_at) VALUES ('prov','ixbrowser','ix','http://127.0.0.1:53200','x','x')")
 const profiles = new ProfileRepository(db)
 let n = 0

@@ -161,6 +161,16 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(self.posts(), [])
         self.assertNotIn("submit", [p["stage"] for p in self.engine.progress])
 
+    def test_the_account_is_checked_even_when_xs_navigation_is_collapsed(self):
+        # Seen on x.com: in a narrow window the account button shows only an avatar, no @handle.
+        self.fixture.set("collapsed-nav")
+        error = self.publish(expectedHandle="someone_else")["error"]
+        self.assertEqual(error["code"], "ACCOUNT_MISMATCH", "the handle is read from the Profile link instead")
+        self.assertEqual(self.posts(), [])
+        reply = self.publish(expectedHandle="relay_test")
+        self.assertTrue(reply["ok"], reply)
+        self.assertEqual(reply["result"]["accountCheck"], "match")
+
     def test_a_click_x_ignores_is_reported_as_not_sent(self):
         self.fixture.set("ignored")
         error = self.publish(confirmTimeoutMs=5000)["error"]
@@ -299,6 +309,89 @@ class OpenPostTests(unittest.TestCase):
     def test_only_x_post_links(self):
         for url in ["https://evil.example/a/status/1", "https://x.com/relay_test", "http://x.com/a/status/1", "https://x.com/a/status/1?x=1", "javascript:alert(1)"]:
             self.assertEqual(self.open(url)["error"]["code"], "INVALID_PARAMS", url)
+
+
+@unittest.skipUnless(ENDPOINT, "AXORA_TEST_CDP_ENDPOINT not set (no real browser to attach to)")
+class RepostTests(unittest.TestCase):
+    """x.repost: one repost, confirmed from the post's own state — never from the click alone."""
+
+    URL = "https://x.com/someone_else/status/1999000000000000001"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fixture = Fixture().start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.fixture.stop()
+
+    def setUp(self):
+        self.fixture.reset()
+        self.engine = EngineProcess(env={"AXORA_ENGINE_TEST_TARGETS": "1"})
+
+    def tearDown(self):
+        self.engine.close()
+
+    def repost(self, **extra):
+        return self.engine.call("x.repost", {"endpoint": ENDPOINT, "url": self.URL, "baseUrl": self.fixture.base_url, "timeoutMs": 15000, "confirmTimeoutMs": 6000, **extra})
+
+    def test_reposts_once_and_confirms_from_the_post_state(self):
+        before = page_tabs()
+        reply = self.repost(expectedHandle="relay_test")
+        self.assertTrue(reply["ok"], reply)
+        self.assertEqual(reply["result"]["verifiedBy"], "button-state")
+        self.assertFalse(reply["result"]["alreadyReposted"])
+        self.assertEqual(self.fixture.reposts, [{"id": "1999000000000000001", "handle": "relay_test"}], "exactly this post, not the reply under it")
+        self.assertEqual([p["stage"] for p in self.engine.progress], ["attach", "open-post", "submit", "confirm"])
+        self.assertEqual(page_tabs(), before, "the tab is closed again")
+
+    def test_an_already_reposted_post_is_never_reposted_again(self):
+        self.assertTrue(self.repost()["ok"])
+        again = self.repost()
+        self.assertTrue(again["ok"], again)
+        self.assertTrue(again["result"]["alreadyReposted"])
+        self.assertEqual(len(self.fixture.reposts), 1, "a retry does not repost twice")
+        self.assertNotIn("submit", [p["stage"] for p in self.engine.progress[-3:]])
+
+    def test_state_that_updates_only_after_a_reload_is_still_confirmed(self):
+        self.fixture.set("repost-silent")
+        reply = self.repost()
+        self.assertTrue(reply["ok"], reply)
+        self.assertEqual(reply["result"]["verifiedBy"], "reload")
+        self.assertEqual(len(self.fixture.reposts), 1)
+
+    def test_a_click_x_ignores_is_not_sent_never_a_success(self):
+        self.fixture.set("repost-ignored")
+        error = self.repost()["error"]
+        self.assertEqual(error["code"], "NOT_SENT")
+        self.assertTrue(error["submitted"])
+        self.assertEqual(self.fixture.reposts, [])
+
+    def test_x_refusing_the_repost_is_reported_with_its_notice(self):
+        self.fixture.set("repost-refused")
+        error = self.repost()["error"]
+        self.assertEqual(error["code"], "REJECTED")
+        self.assertIn("can’t repost", error["message"])
+        self.assertEqual(self.fixture.reposts, [])
+
+    def test_an_unavailable_post_is_reported_and_nothing_clicked(self):
+        self.fixture.set("unavailable")
+        error = self.repost()["error"]
+        self.assertEqual(error["code"], "POST_UNAVAILABLE")
+        self.assertFalse(error["submitted"])
+
+    def test_signed_out_and_wrong_account_repost_nothing(self):
+        self.fixture.set("signed-out")
+        self.assertEqual(self.repost()["error"]["code"], "SESSION_EXPIRED")
+        self.fixture.set("ok")
+        error = self.repost(expectedHandle="someone_else")["error"]
+        self.assertEqual(error["code"], "ACCOUNT_MISMATCH")
+        self.assertFalse(error["submitted"])
+        self.assertEqual(self.fixture.reposts, [])
+
+    def test_only_x_post_links(self):
+        for url in ["https://evil.example/a/status/1", "https://x.com/someone", "javascript:alert(1)"]:
+            self.assertEqual(self.repost(url=url)["error"]["code"], "INVALID_PARAMS", url)
 
 
 class PublishParamTests(unittest.TestCase):

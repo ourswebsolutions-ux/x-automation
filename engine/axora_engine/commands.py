@@ -55,6 +55,7 @@ class Engine:
             "x.publish": self.x_publish,
             "x.openPost": self.x_open_post,
             "x.findPost": self.x_find_post,
+            "x.repost": self.x_repost,
         }
 
     async def _driver(self) -> Any:
@@ -198,6 +199,10 @@ class Engine:
     async def x_open_post(self, params: dict[str, Any]) -> dict[str, Any]:
         """Open a post in the profile's own session for the user (see x_publish.py)."""
         return await x_publish.open_post(self._connect, params)
+
+    async def x_repost(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Repost one post in the profile's own session, confirmed from X's state (see x_publish.py)."""
+        return await x_publish.repost(self._connect, params)
 
     async def x_find_post(self, params: dict[str, Any]) -> dict[str, Any]:
         """Check the account's profile for a submitted post (see x_publish.py)."""

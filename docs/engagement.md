@@ -14,7 +14,19 @@
 - **Export** writes a CSV. Removing a link removes only the local record and its tasks — the post
   on X is never touched. Nothing is read from X: no metrics, no fetching.
 
-## Engagement tasks — you do the engaging
+## Engagement tasks
+
+**Reposts and comments planned by a campaign** are done by X Auto at the campaign's run time (see
+[automation.md](automation.md)):
+
+- They are queue tasks (`repost`, `reply`), one per engagement task (idempotency key `engage:<id>`).
+  They run at the chosen time and survive restarts; a time missed while X Auto was closed is not
+  done late, and you can retry it to do it now.
+- A repost counts only when the post shows *Undo repost* on X; a comment only with X's confirmation
+  (or once found among the account's replies).
+- A repost that was clicked but not confirmed waits for your review, like posts. Marking it done
+  needs the post's link.
+- Tasks you create in Post Links, and likes, are still done by you, as described below.
 
 An engagement task is a reminder of something **you** will do with a post from one of your
 accounts: reply, like, repost, quote, bookmark, follow up, or anything else. X Auto never

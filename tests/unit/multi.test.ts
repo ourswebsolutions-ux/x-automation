@@ -39,7 +39,7 @@ const errOf = async (p: Promise<unknown>) => p.then(() => 'none', (e: Error) => 
 const file = process.argv[2]!
 for (const s of ['', '-wal', '-shm']) rmSync(file + s, { force: true })
 const db = new SqliteDatabase(file).open()
-check('migrate → v14', migrate(db, log as never) === 14)
+check('migrate → v15', migrate(db, log as never) === 15)
 
 // 10 linked accounts on 10 available profiles (as automatic linking leaves them), plus one unavailable
 // profile and one disabled account that must be left out.
