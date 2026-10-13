@@ -91,8 +91,9 @@ The campaign form has three choices and one button. Profiles are never chosen.
 1. **Action:**
    - **Post** publishes your saved posts. A post that carries a comment is followed by that comment,
      as a reply from the same account.
-   - **Repost**: X Auto reposts each chosen post (from Post Links) at the run time, in one of your
-     accounts' profiles. It counts only once the post shows **Undo repost** on X (reloaded if
+   - **Repost**: X Auto reposts each chosen post (from Post Links) at the run time, in one randomly
+     chosen account's profile (one account per post; accounts are drawn in the campaign's random
+     order). It counts only once the post shows **Undo repost** on X (reloaded if
      needed). A post already reposted from that account counts as done without clicking again.
    - **Comment**: X Auto posts your comment as a reply to the chosen post at the run time, through
      the same composer and checks as posts, and counts it only once X confirms it.
@@ -106,12 +107,17 @@ The campaign form has three choices and one button. Profiles are never chosen.
    - Which profiles take part is decided by the main process when you press Start.
    - With none synchronized, the form says so and Start is blocked.
 3. **Posts:**
-   - For Post, choose saved posts (AI or manual). **Every selected post goes out from every eligible
-     profile**: 3 posts × 10 profiles = 30 posts, each with its own copy, task and result. The form
-     and the Start panel show the multiplication. The same text from many accounts can be limited by
-     X, so this is shown as a warning, and posts from one account are spaced out (Settings →
+   - For Post, choose saved posts (AI or manual). **Each selected post goes out once, from one
+     randomly chosen eligible profile**: 10 posts on 10 profiles = 10 posts, one per profile; 5 posts
+     on 10 profiles = 5 posts on 5 random profiles. With more posts than profiles, a profile gets a
+     second post only after every profile has one. Posts from one account are spaced out (Settings →
      Automation). Posts with a comment show a comment icon, and the form says how many comments will
      follow.
+   - **Preview** (all actions): each post, its account and its time, before Start. Each new campaign
+     gets its own random account order (a seed in its settings), so Start makes exactly the
+     previewed assignment, and a retry or restart keeps it.
+   - **Create Post → Publish…** is separate and unchanged: it publishes one post from every eligible
+     profile.
    - For Repost or Comment, choose posts from Post Links. For Comment, also write the comment.
 4. **Run time:** **Now**, or **at a date and time**, including tomorrow or any later date, in this
    computer's time zone. The time is stored in UTC. For reposts and comments it becomes the task's due

@@ -5,6 +5,7 @@ import { composePost } from '@shared/config/postLimits'
 import type { Draft, DraftStatus } from '@shared/types/domain'
 import {
   Button,
+  Checkbox,
   ConfirmDialog,
   EmptyState,
   ErrorState,
@@ -119,14 +120,21 @@ export function CreatePostPage() {
 
   const upsertLocal = (draft: Draft) => drafts.setData([draft, ...list.filter((d) => d.id !== draft.id)])
 
+  // A new post's editor is replaced by a fresh, empty one after it is saved (its key changes).
+  const [blankEditor, setBlankEditor] = useState(0)
   const save = async (value: EditorValue) => {
     setSaving(true)
     try {
       const saved = await relay.drafts.save({ id: selected?.id, ...toInput(value, selected?.accountId ?? null) })
       upsertLocal(saved)
       setDirty(false)
-      toast({ tone: 'success', title: selected ? 'Draft saved' : 'Draft created' })
-      if (!selected) setParams(withMode({ draft: saved.id }), { replace: true })
+      if (selected) toast({ tone: 'success', title: 'Draft saved' })
+      else {
+        // Saved: it is in the list on the left; the editor is cleared for the next post (text, hashtags,
+        // images, comment). On failure (catch below) nothing is cleared, so the text can be saved again.
+        setBlankEditor((n) => n + 1)
+        toast({ tone: 'success', title: 'Draft created', description: 'Saved to your posts. The editor is ready for the next one.', action: { label: 'Open it', onClick: () => open(saved) } })
+      }
     } catch (error) {
       toast({ tone: 'danger', title: 'Draft not saved', description: errorMessage(error), duration: 8000 })
     } finally {
@@ -172,6 +180,57 @@ export function CreatePostPage() {
     }
   }
   const requestDelete = (draft: Draft) => (preferences.confirmations.deleteDraft ? setPendingDelete(draft) : void deleteDraft(draft))
+
+  // Bulk delete: checkboxes on the saved posts, "Select all" for the posts shown (tab + search).
+  const [checked, setChecked] = useState<Set<string>>(new Set())
+  const [confirmBulk, setConfirmBulk] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const shownChecked = rows.filter((d) => checked.has(d.id)).length
+  const allShownChecked = rows.length > 0 && shownChecked === rows.length
+  const toggleOne = (id: string, on: boolean) =>
+    setChecked((c) => {
+      const next = new Set(c)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  const toggleAllShown = (on: boolean) =>
+    setChecked((c) => {
+      const next = new Set(c)
+      for (const d of rows) on ? next.add(d.id) : next.delete(d.id)
+      return next
+    })
+  // Only posts that still exist and are shown count (a filter change keeps the choice, but deletes what you see).
+  const toDelete = rows.filter((d) => checked.has(d.id))
+  const deleteChecked = async () => {
+    setBulkDeleting(true)
+    const removed: string[] = []
+    const refused: string[] = []
+    // One by one through the normal delete: a post that is scheduled or being published is refused and kept.
+    for (const draft of toDelete) {
+      try {
+        await relay.drafts.remove(draft.id)
+        removed.push(draft.id)
+      } catch (error) {
+        refused.push(errorMessage(error))
+      }
+    }
+    const gone = new Set(removed)
+    drafts.setData(list.filter((d) => !gone.has(d.id)))
+    setChecked((c) => new Set([...c].filter((id) => !gone.has(id))))
+    if (selected && gone.has(selected.id)) {
+      setDirty(false)
+      setParams(withMode({}), { replace: true })
+    }
+    setBulkDeleting(false)
+    setConfirmBulk(false)
+    if (removed.length) push({ tone: 'warning', title: `${removed.length} ${removed.length === 1 ? 'post' : 'posts'} deleted`, to: NAV_ITEMS.create.path })
+    toast(
+      refused.length
+        ? { tone: 'warning', title: `${removed.length} deleted, ${refused.length} kept`, description: `Kept because: ${[...new Set(refused)][0]}`, duration: 9000 }
+        : { tone: 'success', title: `${removed.length} ${removed.length === 1 ? 'post' : 'posts'} deleted` }
+    )
+  }
   const onDirtyChange = useCallback((next: boolean) => setDirty(next), [])
 
   return (
@@ -267,11 +326,25 @@ export function CreatePostPage() {
           ) : rows.length === 0 ? (
             <EmptyState size="sm" icon={FileText} title="No drafts match" description="Try another search or filter." />
           ) : (
+            <>
+            <div className="flex items-center gap-3 border-b border-line px-3.5 py-2 text-sm">
+              <Checkbox checked={allShownChecked} indeterminate={shownChecked > 0 && !allShownChecked} onChange={toggleAllShown} aria-label="Select all posts" />
+              <span className="flex-1 text-fg-muted">
+                {shownChecked ? `${shownChecked} of ${rows.length} selected` : `Select all${query.trim() || status !== 'all' ? ' shown' : ''} (${rows.length})`}
+              </span>
+              {shownChecked > 0 && (
+                <Button size="sm" variant="danger" icon={Trash2} onClick={() => setConfirmBulk(true)}>
+                  Delete {shownChecked}
+                </Button>
+              )}
+            </div>
             <ul aria-label="Drafts" className="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
               {rows.map((draft) => (
                 <DraftItem
                   key={draft.id}
                   draft={draft}
+                  checked={checked.has(draft.id)}
+                  onCheck={(on) => toggleOne(draft.id, on)}
                   active={draft.id === selected?.id}
                   maxWeighted={preferences.editor.lengthProfile === 'premium' ? 25_000 : 280}
                   accountLabel={accounts.data?.find((a) => a.id === draft.accountId)?.label ?? null}
@@ -281,6 +354,7 @@ export function CreatePostPage() {
                 />
               ))}
             </ul>
+            </>
           )}
         </Panel>
 
@@ -293,7 +367,7 @@ export function CreatePostPage() {
           />
         ) : (
           <DraftEditor
-            key={selected?.id ?? 'new'}
+            key={selected?.id ?? `new-${blankEditor}`}
             draft={selected}
             saving={saving}
             onSave={save}
@@ -306,6 +380,16 @@ export function CreatePostPage() {
       </div>
 
       <AssetLibraryDialog open={libraryOpen} onClose={() => setLibraryOpen(false)} />
+      <ConfirmDialog
+        open={confirmBulk}
+        title={`Delete ${toDelete.length} ${toDelete.length === 1 ? 'post' : 'posts'}?`}
+        description="They are removed from this device and can’t be undone. Posts that are scheduled or being published are kept (cancel their schedule first). Posts already on X stay on X."
+        confirmLabel={`Delete ${toDelete.length}`}
+        tone="danger"
+        busy={bulkDeleting}
+        onCancel={() => setConfirmBulk(false)}
+        onConfirm={() => void deleteChecked()}
+      />
       <ConfirmDialog
         open={Boolean(pendingDelete)}
         title="Delete this post?"
@@ -361,6 +445,8 @@ function LeaveGuard({ onLeave }: { onLeave: () => void }) {
 
 function DraftItem(props: {
   draft: Draft
+  checked: boolean
+  onCheck: (on: boolean) => void
   active: boolean
   maxWeighted: number
   accountLabel: string | null
@@ -372,8 +458,11 @@ function DraftItem(props: {
   const text = composePost(d.body, d.hashtags)
   const length = measurePost(text, props.maxWeighted)
   return (
-    <li className={cn('group relative transition-colors hover:bg-highlight', props.active && 'bg-highlight shadow-[inset_2px_0_0_var(--accent)]')}>
-      <button type="button" onClick={props.onOpen} aria-current={props.active || undefined} className="flex w-full flex-col gap-1.5 px-3.5 py-3 pr-16 text-left outline-none focus-visible:bg-highlight">
+    <li className={cn('group relative flex items-start transition-colors hover:bg-highlight', props.active && 'bg-highlight shadow-[inset_2px_0_0_var(--accent)]')}>
+      <span className="pl-3.5 pt-3.5">
+        <Checkbox checked={props.checked} onChange={props.onCheck} aria-label={`Select post: ${(d.body || 'Image-only post').slice(0, 80)}`} />
+      </span>
+      <button type="button" onClick={props.onOpen} aria-current={props.active || undefined} className="flex min-w-0 flex-1 flex-col gap-1.5 px-3 py-3 pr-16 text-left outline-none focus-visible:bg-highlight">
         <p className={cn('line-clamp-2 text-sm text-pretty', text.trim() ? 'text-fg' : 'text-fg-faint')}>{text.trim() || (d.media.length ? 'Image-only post' : 'Empty draft')}</p>
         <span className="flex flex-wrap items-center gap-1.5 text-2xs text-fg-subtle">
           <StatusBadge tone={d.status === 'ready' ? 'success' : 'neutral'}>{STATUS_LABEL[d.status]}</StatusBadge>

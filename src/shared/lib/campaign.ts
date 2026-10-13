@@ -18,7 +18,12 @@ export interface CampaignChoices {
   commentText: string
   when: 'now' | 'schedule'
   startAt: string | null
+  /** This campaign's random account order (a new one for each new campaign; the preview and Start share it). */
+  seed: number
 }
+
+/** A new random seed for the next campaign's account order. */
+export const newSeed = () => Math.floor(Math.random() * 4_294_967_296)
 
 export const defaultChoices = (): CampaignChoices => ({
   name: 'My campaign',
@@ -27,13 +32,14 @@ export const defaultChoices = (): CampaignChoices => ({
   repostLinks: [],
   commentText: '',
   when: 'now',
-  startAt: null
+  startAt: null,
+  seed: newSeed()
 })
 
 /**
  * The automation config for these choices, on the existing campaign engine. Every selected post goes
- * out from every eligible synchronized profile (posts × profiles tasks, each with its own copy, task
- * and result; the main process decides which profiles when the campaign starts). Fixed: posted
+ * out once, from one randomly chosen eligible synchronized profile (the main process decides which
+ * profiles are eligible; the campaign's seed fixes the random order, so Start = the preview). Fixed: posted
  * automatically, the signed-in account checked wherever its X username is confirmed, one post per
  * slot (queue spacing applies), no end date / posting days / hours. A saved post's comment goes out
  * as a reply from the same account after the post. Reposts and comments on Post Links are tasks you
@@ -68,7 +74,8 @@ export function toConfig(c: CampaignChoices): AutomationConfig {
       imageSize: '1024x1024',
       existingAssetId: null
     },
-    targets: { scope: 'all', profileIds: [], distribution: posting ? 'same' : 'unique', allowDuplicates: posting, requireConfirmedIdentity: false, createMissingAccounts: true },
+    // One randomly chosen eligible account per selected post (accounts in this campaign's random order).
+    targets: { scope: 'all', profileIds: [], distribution: 'unique', allowDuplicates: false, requireConfirmedIdentity: false, createMissingAccounts: true, shuffleSeed: c.seed },
     actions: {
       publish: posting,
       saveDrafts: false,

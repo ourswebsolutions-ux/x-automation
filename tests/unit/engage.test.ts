@@ -112,7 +112,8 @@ function boot(): void {
 }
 boot()
 
-const repostCampaign = (links: string[], when: 'now' | 'schedule' = 'now', startAt: string | null = null) => toConfig({ ...defaultChoices(), name: 'Reposts', action: 'repost', repostLinks: links, when, startAt })
+// Like the form: one campaign = one seed (its random account order); pass the same seed to preview and start it.
+const repostCampaign = (links: string[], when: 'now' | 'schedule' = 'now', startAt: string | null = null, seed?: number) => toConfig({ ...defaultChoices(), name: 'Reposts', action: 'repost', repostLinks: links, when, startAt, ...(seed === undefined ? {} : { seed }) })
 const commentCampaign = (link: string, text: string, when: 'now' | 'schedule' = 'now', startAt: string | null = null) => toConfig({ ...defaultChoices(), name: 'Comment', action: 'comment', repostLinks: [link], commentText: text, when, startAt })
 const run = (id: string) => runs.details(id).run
 const items = (id: string) => runs.details(id).items.filter((i) => i.kind === 'engagement')
@@ -246,11 +247,13 @@ check('a repost interrupted by a shutdown needs review — it is never repeated 
 db.run("UPDATE automation_runs SET status = 'stopped' WHERE status = 'publishing'")
 const many = ['https://x.com/news_one/status/1900000000000000201', 'https://x.com/news_two/status/1900000000000000202', 'https://x.com/news_three/status/1900000000000000203', 'https://x.com/news_four/status/1900000000000000204']
 const at6b = new Date(Date.now() + 3_600_000).toISOString()
-const plan6b = runs.plan(repostCampaign(many, 'schedule', at6b))
+const plan6b = runs.plan(repostCampaign(many, 'schedule', at6b, 6060))
 const assigned6b = plan6b.engagementPreview.filter((p) => !p.skipped)
 check('select all (4 posts, 3 accounts): every post assigned to exactly one account, accounts take turns', plan6b.ok && assigned6b.length === 4 && new Set(assigned6b.map((p) => p.url)).size === 4 && new Set(assigned6b.slice(0, 3).map((p) => p.accountId)).size === 3 && assigned6b[3]!.accountId === assigned6b[0]!.accountId, JSON.stringify(plan6b.engagementPreview.map((p) => [p.url.slice(-3), p.accountLabel, p.skipped])))
 check('… the preview shows each post’s account label and its scheduled time', assigned6b.every((p) => p.accountLabel?.startsWith('Account ') && p.runAt === at6b))
-const run6b = await runs.start(repostCampaign(many, 'schedule', at6b))
+const firstPicks = new Set([11, 12, 13, 14, 15, 16, 17, 18].map((seed) => runs.plan(toConfig({ ...defaultChoices(), name: 'R', action: 'repost', repostLinks: many, when: 'now', startAt: null, seed })).engagementPreview[0]?.accountId))
+check('reposts: new campaigns draw accounts at random (not always the same first account), still one account per post', firstPicks.size > 1, [...firstPicks].join())
+const run6b = await runs.start(repostCampaign(many, 'schedule', at6b, 6060))
 const queued6b = db.all<{ account_id: string; payload: string; run_after: string }>("SELECT t.account_id, t.payload, t.run_after FROM tasks t JOIN run_items i ON t.idempotency_key = 'engage:' || i.engagement_task_id WHERE i.run_id = :id", { id: run6b.id })
 check('… Start creates exactly the previewed assignment: one repost task per post, same accounts, at the chosen time', queued6b.length === 4 && assigned6b.every((p) => queued6b.some((q) => JSON.parse(q.payload).url === p.url && q.account_id === p.accountId && q.run_after === at6b)), JSON.stringify(queued6b.map((q) => [JSON.parse(q.payload).url.slice(-3), q.account_id.slice(-2)])))
 check('… never several of your accounts on the same post', db.get<{ n: number }>("SELECT COUNT(*) AS n FROM (SELECT link_id FROM engagement_tasks WHERE kind = 'repost' GROUP BY link_id HAVING COUNT(DISTINCT account_id) > 1)")!.n === 0)

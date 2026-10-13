@@ -6,6 +6,7 @@ import { Button, Checkbox, Field, Input, SearchField, SegmentedControl, Spinner,
 import { useDrafts } from '@/data/drafts'
 import { useLinks } from '@/data/links'
 import { errorMessage, relay } from '@/lib/bridge'
+import { cn } from '@/lib/cn'
 import { formatDateTime } from '@/lib/format'
 import { NAV_ITEMS } from '@/app/navigation'
 import { DraftPicker } from './DraftPicker'
@@ -136,9 +137,9 @@ export function CampaignForm({ value, onChange, plan, checking }: { value: Campa
               )}
               <p className="text-xs text-fg-subtle" aria-live="polite">
                 {plan && plan.fromDrafts > 0
-                  ? `Each selected post goes out from every profile: ${plan.fromDrafts} ${plan.fromDrafts === 1 ? 'post' : 'posts'} × ${plan.profiles.eligible} ${plan.profiles.eligible === 1 ? 'profile' : 'profiles'} = ${plan.posts} ${plan.posts === 1 ? 'post' : 'posts'}, each with its own copy and result.`
-                  : 'Each selected post goes out from every synchronized profile, each with its own copy and result.'}{' '}
-                The same text from many accounts can be limited by X; posts from one account are spaced out (Settings → Automation).
+                  ? `Each selected post goes out once, from one randomly chosen profile: ${plan.posts} ${plan.posts === 1 ? 'post' : 'posts'} on ${new Set(plan.postPreview.map((p) => p.accountId)).size} ${new Set(plan.postPreview.map((p) => p.accountId)).size === 1 ? 'profile' : 'profiles'} (a different profile for each post while there are enough).`
+                  : 'Each selected post goes out once, from one randomly chosen synchronized profile.'}{' '}
+                The assignment is shown in the preview; posts from one account are spaced out (Settings → Automation).
               </p>
             </>
           )
@@ -154,7 +155,7 @@ export function CampaignForm({ value, onChange, plan, checking }: { value: Campa
         )}
       </Section>
 
-      {value.action !== 'post' && <AssignmentPreview plan={plan} checking={checking} action={value.action} />}
+      <AssignmentPreview plan={plan} checking={checking} action={value.action} when={value.when} />
 
       <Section step={4} title="Run time">
         <SegmentedControl<'now' | 'schedule'>
@@ -184,28 +185,32 @@ export function CampaignForm({ value, onChange, plan, checking }: { value: Campa
 }
 
 /**
- * Repost / comment campaigns, before Start: each selected post, the one account it is assigned to,
- * when it runs, and every skipped post with its reason. Start makes exactly this assignment.
+ * Before Start: each selected post, the one randomly chosen account it is assigned to, when it runs,
+ * and every skipped post with its reason. Start makes exactly this assignment (same random order).
  */
-function AssignmentPreview({ plan, checking, action }: { plan: RunPlan | null; checking: boolean; action: CampaignAction }) {
-  const rows = plan?.engagementPreview ?? []
+function AssignmentPreview({ plan, checking, action, when }: { plan: RunPlan | null; checking: boolean; action: CampaignAction; when: 'now' | 'schedule' }) {
+  const rows =
+    action === 'post'
+      ? (plan?.postPreview ?? []).map((p, i) => ({ key: `${p.draftId}|${i}`, title: p.text.trim().replace(/\s+/g, ' ') || 'Image-only post', mono: false, accountLabel: p.accountLabel, runAt: when === 'now' ? null : p.runAt, skipped: null as string | null }))
+      : (plan?.engagementPreview ?? []).map((r) => ({ key: `${r.url}|${r.kind}`, title: r.url.replace('https://x.com/', ''), mono: true, accountLabel: r.accountLabel, runAt: r.runAt, skipped: r.skipped }))
   const assigned = rows.filter((r) => !r.skipped).length
+  const noun = action === 'post' ? ['post', 'posts'] : action === 'repost' ? ['repost', 'reposts'] : ['comment', 'comments']
   return (
     <section aria-label="Preview" className="flex flex-col gap-3 rounded-lg border border-line bg-surface-2 px-5 py-4">
       <h2 className="flex items-center gap-2 text-sm font-medium text-fg">
         Preview
         {checking && <Spinner size={12} />}
         <span className="ml-auto text-xs font-normal text-fg-subtle" aria-live="polite">
-          {rows.length ? `${assigned} ${action === 'repost' ? (assigned === 1 ? 'repost' : 'reposts') : assigned === 1 ? 'comment' : 'comments'} · ${rows.length - assigned} skipped` : 'Choose posts to see the plan'}
+          {rows.length ? `${assigned} ${assigned === 1 ? noun[0] : noun[1]}${rows.length - assigned ? ` · ${rows.length - assigned} skipped` : ''}` : 'Choose posts to see the plan'}
         </span>
       </h2>
-      <p className="text-xs text-fg-subtle">Each post is handled by one of your accounts — accounts take turns, never several accounts on the same post.</p>
+      <p className="text-xs text-fg-subtle">Each post goes to one randomly chosen account (a different one for each post while there are enough) — never several of your accounts on the same post.</p>
       {rows.length > 0 && (
         <ul className="flex max-h-72 flex-col divide-y divide-line overflow-y-auto rounded-md border border-line" aria-label="Planned tasks">
           {rows.map((r) => (
-            <li key={`${r.url}|${r.kind}`} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-2 text-sm">
-              <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-muted" title={r.url}>
-                {r.url.replace('https://x.com/', '')}
+            <li key={r.key} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-2 text-sm">
+              <span className={cn('min-w-0 flex-1 truncate text-fg-muted', r.mono ? 'font-mono text-xs' : 'text-sm')} title={r.title}>
+                {r.title}
               </span>
               {r.skipped ? (
                 <span className="text-xs text-warning">{r.skipped}</span>

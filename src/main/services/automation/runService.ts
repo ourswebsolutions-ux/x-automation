@@ -106,6 +106,24 @@ function nextAllowed(config: AutomationConfig, at: Date): Date {
   return t
 }
 
+/** A seeded random order (mulberry32 + Fisher–Yates): the same seed always gives the same order. */
+export function shuffleWithSeed<T>(items: T[], seed: number): T[] {
+  let state = seed >>> 0
+  const next = () => {
+    state = (state + 0x6d2b79f5) >>> 0
+    let t = state
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296
+  }
+  const out = [...items]
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(next() * (i + 1))
+    ;[out[i], out[j]] = [out[j]!, out[i]!]
+  }
+  return out
+}
+
 /**
  * The posting time for slot `index` of a profile. Slots follow each other: each is the first
  * allowed moment (posting day, posting hours) at least one interval after the previous slot,
@@ -242,7 +260,7 @@ export class RunService {
     const chosen = targets.scope === 'all' ? synced : synced.filter((p) => targets.profileIds.includes(p.id))
     if (targets.scope === 'all' && synced.length === 0) block('No profiles are synced from IX Browser yet. Sync profiles first.')
     if (targets.scope === 'selected' && chosen.length === 0 && targets.distribution !== 'drafts') block('Select at least one profile.')
-    const plannedTargets: RunPlan['targets'] = chosen.map((profile) => {
+    const listed: RunPlan['targets'] = chosen.map((profile) => {
       const account = this.deps.accounts.byProfile(profile.id)
       let reason: string | null = null
       if (profile.availability !== 'available') reason = 'Not reported by IX Browser'
@@ -251,6 +269,8 @@ export class RunService {
       else if (targets.requireConfirmedIdentity && (account.identity !== 'confirmed' || !account.handle)) reason = 'Username not confirmed'
       return { profileId: profile.id, profileName: profile.name, accountId: account?.id ?? null, accountLabel: account?.label ?? null, eligible: reason === null, reason }
     })
+    // The campaign's random account order (same seed → same order, so Start = the preview).
+    const plannedTargets = targets.shuffleSeed === undefined ? listed : shuffleWithSeed(listed, targets.shuffleSeed)
     const unavailable = plannedTargets.filter((t) => t.reason === 'Not reported by IX Browser').length
     const eligible = plannedTargets.filter((t) => t.eligible)
     if (unavailable && config.failure.onProfileUnavailable === 'stop') block(`${unavailable} selected ${unavailable === 1 ? 'profile is' : 'profiles are'} unavailable.`)
@@ -333,6 +353,16 @@ export class RunService {
     if (kinds.length && links.length === 0) block('Add the post links for reposting, commenting or liking.')
     if (badLinks.length) block(`${badLinks.length} engagement ${badLinks.length === 1 ? 'link is' : 'links are'} not a link to a post on X.`)
     if (actions.comment && !actions.commentText.trim()) block('Write the comment.')
+    // Post campaigns from your saved posts: each post with its account and time — what Start will create.
+    const postPreview: RunPlan['postPreview'] = []
+    if (publishing && content.source === 'drafts' && fromDrafts > 0 && start && !problems.some((p) => p.blocking)) {
+      const texts = new Map(this.deps.db.all<{ id: string; body: string }>('SELECT id, body FROM drafts WHERE id IN (SELECT value FROM json_each(:ids))', { ids: JSON.stringify(content.draftIds) }).map((d) => [d.id, d.body]))
+      const draftIds = usableDrafts.slice(0, fromDrafts).map((d) => d.id)
+      for (const slot of this.postSlots(config, eligible, start, schedule.endAt ? new Date(schedule.endAt) : null, draftIds, posts)) {
+        postPreview.push({ draftId: slot.sourceDraftId ?? '', text: texts.get(slot.sourceDraftId ?? '') ?? '', accountId: slot.accountId, accountLabel: eligible.find((t) => t.accountId === slot.accountId)?.accountLabel ?? null, runAt: slot.runAt })
+      }
+    }
+
     // Each selected post gets one of your accounts (several of your accounts on one post is coordinated
     // engagement); the same comment goes on one post only (repetitive automated replies). The preview
     // shows the assignment Start will make, with every skipped post and its reason.
@@ -379,6 +409,7 @@ export class RunService {
       images: content.generateImages ? generations + usableDrafts.slice(0, fromDrafts).filter((d) => !d.hasMedia).length : usableDrafts.slice(0, fromDrafts).filter((d) => d.hasMedia).length,
       comments,
       engagementTasks,
+      postPreview,
       engagementPreview,
       firstRunAt,
       lastRunAt,
@@ -444,19 +475,8 @@ export class RunService {
         if (!publishing) {
           for (let i = 0; i < plan.posts; i++) add({ profileId: null, accountId: null, runAt: null, kind: 'post' })
         } else {
-          // Round-robin over profiles so a cap of N posts spreads across profiles.
-          let made = 0
-          for (let slot = 0; slot < config.schedule.postsPerProfile && made < plan.posts; slot++) {
-            for (const target of targets) {
-              if (made >= plan.posts) break
-              const at = slotTime(config, start, slot)
-              if (end && at > end) continue
-              const sourceDraftId = (config.targets.distribution === 'same' ? draftIds[slot] : draftIds[made]) ?? null
-              if (config.content.source === 'drafts' && !sourceDraftId) continue
-              add({ profileId: target.profileId, accountId: target.accountId, runAt: at.toISOString(), kind: 'post', sourceDraftId })
-              made++
-            }
-          }
+          // Exactly the assignment the preview showed (same targets in the same random order).
+          for (const slot of this.postSlots(config, targets, start, end, draftIds, plan.posts)) add({ ...slot, kind: 'post' })
         }
       }
     })
@@ -1025,6 +1045,27 @@ export class RunService {
           if (kind === 'reply') commented = true
         }
         out.push({ ...base, accountId: chosen, skipped: chosen ? null : `Skipped: ${reason ?? 'no account can take it.'}` })
+      }
+    }
+    return out
+  }
+
+  /**
+   * Which account posts what, and when. Round-robin over the targets (already in the campaign's random
+   * order): with as many accounts as posts, every post gets a different account; with more posts than
+   * accounts, an account gets a second one only after every account has one. "same" (every post from
+   * every account) is kept for older saved setups. Used for the preview and, unchanged, by Start.
+   */
+  private postSlots(config: AutomationConfig, targets: { profileId: string; accountId: string | null }[], start: Date, end: Date | null, draftIds: string[], maxPosts: number): { profileId: string; accountId: string | null; runAt: string; sourceDraftId: string | null }[] {
+    const out: { profileId: string; accountId: string | null; runAt: string; sourceDraftId: string | null }[] = []
+    for (let slot = 0; slot < config.schedule.postsPerProfile && out.length < maxPosts; slot++) {
+      for (const target of targets) {
+        if (out.length >= maxPosts) break
+        const at = slotTime(config, start, slot)
+        if (end && at > end) continue
+        const sourceDraftId = (config.targets.distribution === 'same' ? draftIds[slot] : draftIds[out.length]) ?? null
+        if (config.content.source === 'drafts' && !sourceDraftId) continue
+        out.push({ profileId: target.profileId, accountId: target.accountId, runAt: at.toISOString(), sourceDraftId })
       }
     }
     return out

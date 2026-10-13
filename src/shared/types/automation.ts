@@ -50,6 +50,12 @@ export interface TargetSettings {
   requireConfirmedIdentity: boolean
   /** Profiles without an account record get one (username unknown) — only with requireConfirmedIdentity off. */
   createMissingAccounts: boolean
+  /**
+   * Random order of the eligible accounts for this campaign (a seed; each new campaign gets a new one).
+   * The preview and Start shuffle with the same seed, so Start makes exactly the previewed assignment.
+   * Absent = the accounts' list order.
+   */
+  shuffleSeed?: number
 }
 
 export interface ActionSettings {
@@ -129,6 +135,8 @@ export interface RunPlan {
    * Repost / comment campaigns, before they start: each selected post with the one account it is
    * assigned to (or why it is skipped) and when it runs. Start uses exactly this assignment.
    */
+  /** Post campaigns from your saved posts, before they start: each post, its one account and its time. */
+  postPreview: { draftId: Id; text: string; accountId: Id | null; accountLabel: string | null; runAt: Timestamp | null }[]
   engagementPreview: {
     url: string
     kind: 'repost' | 'reply' | 'like'

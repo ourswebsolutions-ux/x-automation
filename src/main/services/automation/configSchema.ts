@@ -44,7 +44,8 @@ export const automationConfigSchema = z
         distribution: z.enum(['unique', 'same', 'drafts']),
         allowDuplicates: z.boolean(),
         requireConfirmedIdentity: z.boolean(),
-        createMissingAccounts: z.boolean()
+        createMissingAccounts: z.boolean(),
+        shuffleSeed: z.number().int().min(0).max(4_294_967_295).optional()
       })
       .strict(),
     actions: z

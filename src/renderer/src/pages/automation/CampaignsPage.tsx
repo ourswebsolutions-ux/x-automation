@@ -10,6 +10,7 @@ import { useAutomation, useQueue } from '@/data/publishing'
 import { errorMessage, relay } from '@/lib/bridge'
 import { formatDateTime, pluralize } from '@/lib/format'
 import { NAV_ITEMS } from '@/app/navigation'
+import { newSeed } from '@shared/lib/campaign'
 import { CampaignForm, choicesFrom, defaultChoices, toConfig, type CampaignChoices } from './CampaignForm'
 import { RunPanel, RUN_LABEL } from './RunPanel'
 
@@ -98,7 +99,7 @@ export function CampaignsPage() {
   const summary = !plan
     ? ''
     : choices.action === 'post'
-      ? `${pluralize(plan.posts, 'post')} on ${pluralize(plan.profiles.eligible, 'profile')}${plan.fromDrafts > 1 ? ` (${plan.fromDrafts} posts × ${plan.profiles.eligible} profiles)` : ''}`
+      ? `${pluralize(plan.posts, 'post')}, each from one random profile (${pluralize(new Set(plan.postPreview.map((p) => p.accountId)).size, 'profile')} of ${plan.profiles.eligible})`
       : `${pluralize(plan.engagementTasks, choices.action === 'repost' ? 'repost' : 'comment')} from your profiles`
 
   const start = async () => {
@@ -107,7 +108,8 @@ export function CampaignsPage() {
       const run = await relay.runs.start(config)
       setParams({ run: run.id }, { replace: true })
       // These posts and links now belong to this campaign; the form is ready for the next one.
-      setChoices((c) => ({ ...c, draftIds: [], repostLinks: [] }))
+      // A new campaign gets a new random account order.
+      setChoices((c) => ({ ...c, draftIds: [], repostLinks: [], seed: newSeed() }))
       toast({ tone: 'success', title: 'Campaign started' })
     } catch (error) {
       toast({ tone: 'danger', title: 'Campaign didn’t start', description: errorMessage(error), duration: 9000 })
