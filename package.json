@@ -1,7 +1,7 @@
 {
   "name": "x-automation",
   "productName": "X Auto",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Desktop workspace for managing X accounts, drafts, scheduling and automation.",
   "author": "AxoraWeb",
   "private": true,
