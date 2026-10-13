@@ -6,6 +6,7 @@ import { Button, Checkbox, Field, Input, SearchField, SegmentedControl, Spinner,
 import { useDrafts } from '@/data/drafts'
 import { useLinks } from '@/data/links'
 import { errorMessage, relay } from '@/lib/bridge'
+import { formatDateTime } from '@/lib/format'
 import { NAV_ITEMS } from '@/app/navigation'
 import { DraftPicker } from './DraftPicker'
 
@@ -153,6 +154,8 @@ export function CampaignForm({ value, onChange, plan, checking }: { value: Campa
         )}
       </Section>
 
+      {value.action !== 'post' && <AssignmentPreview plan={plan} checking={checking} action={value.action} />}
+
       <Section step={4} title="Run time">
         <SegmentedControl<'now' | 'schedule'>
           aria-label="Run time"
@@ -180,6 +183,46 @@ export function CampaignForm({ value, onChange, plan, checking }: { value: Campa
   )
 }
 
+/**
+ * Repost / comment campaigns, before Start: each selected post, the one account it is assigned to,
+ * when it runs, and every skipped post with its reason. Start makes exactly this assignment.
+ */
+function AssignmentPreview({ plan, checking, action }: { plan: RunPlan | null; checking: boolean; action: CampaignAction }) {
+  const rows = plan?.engagementPreview ?? []
+  const assigned = rows.filter((r) => !r.skipped).length
+  return (
+    <section aria-label="Preview" className="flex flex-col gap-3 rounded-lg border border-line bg-surface-2 px-5 py-4">
+      <h2 className="flex items-center gap-2 text-sm font-medium text-fg">
+        Preview
+        {checking && <Spinner size={12} />}
+        <span className="ml-auto text-xs font-normal text-fg-subtle" aria-live="polite">
+          {rows.length ? `${assigned} ${action === 'repost' ? (assigned === 1 ? 'repost' : 'reposts') : assigned === 1 ? 'comment' : 'comments'} · ${rows.length - assigned} skipped` : 'Choose posts to see the plan'}
+        </span>
+      </h2>
+      <p className="text-xs text-fg-subtle">Each post is handled by one of your accounts — accounts take turns, never several accounts on the same post.</p>
+      {rows.length > 0 && (
+        <ul className="flex max-h-72 flex-col divide-y divide-line overflow-y-auto rounded-md border border-line" aria-label="Planned tasks">
+          {rows.map((r) => (
+            <li key={`${r.url}|${r.kind}`} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-2 text-sm">
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-muted" title={r.url}>
+                {r.url.replace('https://x.com/', '')}
+              </span>
+              {r.skipped ? (
+                <span className="text-xs text-warning">{r.skipped}</span>
+              ) : (
+                <>
+                  <span className="text-xs text-fg">{r.accountLabel ?? 'Account'}</span>
+                  <span className="tabular text-xs text-fg-subtle">{r.runAt ? formatDateTime(r.runAt) : 'Now'}</span>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 /** Posts from the Post Links library to repost. */
 function LinkPicker({ value, onChange }: { value: string[]; onChange: (urls: string[]) => void }) {
   const navigate = useNavigate()
@@ -187,6 +230,11 @@ function LinkPicker({ value, onChange }: { value: string[]; onChange: (urls: str
   const [query, setQuery] = useState('')
   const list = (links.data ?? []).filter((l) => l.postId)
   const shown = list.filter((l) => !query.trim() || `${l.url} ${l.preview} ${l.handle ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()))
+  // Select All covers the posts shown (all of them, or those matching the search).
+  const shownSelected = shown.filter((l) => value.includes(l.url)).length
+  const allShown = shown.length > 0 && shownSelected === shown.length
+  const toggleAll = (on: boolean) =>
+    onChange(on ? [...new Set([...value, ...shown.map((l) => l.url)])] : value.filter((u) => !shown.some((l) => l.url === u)))
   if (links.data && list.length === 0) {
     return (
       <div className="flex flex-col items-start gap-3 rounded-md border border-dashed border-line-strong px-4 py-5">
@@ -203,6 +251,13 @@ function LinkPicker({ value, onChange }: { value: string[]; onChange: (urls: str
       <div className="border-b border-line px-3 py-2">
         <SearchField value={query} onChange={setQuery} placeholder="Search post links" size="sm" />
       </div>
+      <label className="flex items-center gap-3 border-b border-line px-3 py-2 text-sm text-fg">
+        <Checkbox checked={allShown} indeterminate={shownSelected > 0 && !allShown} onChange={toggleAll} aria-label="Select all posts" disabled={shown.length === 0} />
+        <span className="flex-1">Select all{query.trim() ? ' matching' : ''}</span>
+        <span className="tabular text-xs text-fg-subtle">
+          {shownSelected} of {shown.length}
+        </span>
+      </label>
       <ul className="max-h-64 overflow-y-auto" aria-label="Post links">
         {shown.map((l) => (
           <li key={l.id} className="flex items-center gap-3 px-3 py-2 hover:bg-surface-3">

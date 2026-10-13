@@ -125,6 +125,18 @@ export interface RunPlan {
   /** Posts (from your saved posts) that carry a comment, posted as a reply after each post. */
   comments: number
   engagementTasks: number
+  /**
+   * Repost / comment campaigns, before they start: each selected post with the one account it is
+   * assigned to (or why it is skipped) and when it runs. Start uses exactly this assignment.
+   */
+  engagementPreview: {
+    url: string
+    kind: 'repost' | 'reply' | 'like'
+    accountId: Id | null
+    accountLabel: string | null
+    runAt: Timestamp | null
+    skipped: string | null
+  }[]
   firstRunAt: Timestamp | null
   lastRunAt: Timestamp | null
   actions: string[]

@@ -47,7 +47,7 @@ interface Deps {
   providers: Pick<ProviderService, 'list'>
   preferences: Pick<PreferencesStore, 'get'>
   publishing: PublishingService
-  engagement: Pick<EngagementService, 'create' | 'setStatus'>
+  engagement: Pick<EngagementService, 'create' | 'setStatus' | 'check'>
   queue: QueueService
   notifier: Notifier
   log: ScopedLogger
@@ -333,9 +333,13 @@ export class RunService {
     if (kinds.length && links.length === 0) block('Add the post links for reposting, commenting or liking.')
     if (badLinks.length) block(`${badLinks.length} engagement ${badLinks.length === 1 ? 'link is' : 'links are'} not a link to a post on X.`)
     if (actions.comment && !actions.commentText.trim()) block('Write the comment.')
-    // The same comment on several posts is the repetitive automated reply X's rules don't allow.
-    if (actions.comment && links.length > 1) block('A comment goes to one post. Choose one post for this comment (write a separate comment for each post).')
-    const engagementTasks = kinds.length && eligible.length ? links.filter((l) => parsePostUrl(l)).length * kinds.length : 0
+    // Each selected post gets one of your accounts (several of your accounts on one post is coordinated
+    // engagement); the same comment goes on one post only (repetitive automated replies). The preview
+    // shows the assignment Start will make, with every skipped post and its reason.
+    const engagementPreview = kinds.length && !badLinks.length ? this.engagementAssignments(config, eligible.map((t) => t.accountId).filter((a): a is string => Boolean(a))).map((a) => ({ url: a.url, kind: a.kind, accountId: a.accountId, accountLabel: a.accountId ? (this.deps.accounts.get(a.accountId)?.label ?? null) : null, runAt: a.accountId ? a.dueAt : null, skipped: a.skipped })) : []
+    const engagementTasks = engagementPreview.filter((p) => !p.skipped).length
+    if (kinds.length && links.length && !badLinks.length && engagementTasks === 0) block('None of the selected posts can be assigned to one of your accounts — see the reasons in the preview.')
+    if (actions.comment && links.length > 1) warn('The same comment goes on one post only (repeating it on several posts is repetitive replying): the other selected posts are skipped. Write a separate comment for each post.')
     if (engagementTasks && actions.like) warn('Likes are planned as tasks you complete in the profile — X Auto doesn’t like posts by itself.')
     if (engagementTasks && (actions.repost || actions.comment)) warn('Each post is reposted or commented on from one of your accounts only — several of your accounts on one post is coordinated engagement.')
 
@@ -375,6 +379,7 @@ export class RunService {
       images: content.generateImages ? generations + usableDrafts.slice(0, fromDrafts).filter((d) => !d.hasMedia).length : usableDrafts.slice(0, fromDrafts).filter((d) => d.hasMedia).length,
       comments,
       engagementTasks,
+      engagementPreview,
       firstRunAt,
       lastRunAt,
       actions: summary
@@ -966,19 +971,79 @@ export class RunService {
     void config
   }
 
+  /**
+   * Which one of your accounts acts on each selected post (or why the post is skipped). Accounts take
+   * turns, so the selected posts are spread over your accounts; each post gets one account only, and
+   * a comment goes on one post only. Used for the preview and, unchanged, by Start.
+   */
+  private engagementAssignments(config: AutomationConfig, accounts: string[]): { url: string; postId: string; handle: string | null; linkId: string | null; kind: 'repost' | 'reply' | 'like'; accountId: string | null; dueAt: string | null; skipped: string | null }[] {
+    const links = [...new Map(config.actions.engagementLinks.map((l) => parsePostUrl(l)).filter((l): l is NonNullable<ReturnType<typeof parsePostUrl>> => Boolean(l)).map((l) => [l.postId, l])).values()]
+    const kinds = [config.actions.repost && 'repost', config.actions.comment && 'reply', config.actions.like && 'like'].filter(Boolean) as ('repost' | 'reply' | 'like')[]
+    // A campaign's run time becomes the task's due time (now = no due time).
+    const dueAt = config.schedule.when === 'schedule' ? config.schedule.startAt : null
+    const out: ReturnType<RunService['engagementAssignments']> = []
+    let turn = 0
+    let commented = false
+    for (const parsed of links) {
+      const linkId = this.deps.db.get<{ id: string }>('SELECT id FROM post_links WHERE url = :url OR post_id = :postId', { url: parsed.url, postId: parsed.postId })?.id ?? null
+      for (const kind of kinds) {
+        const base = { url: parsed.url, postId: parsed.postId, handle: parsed.handle, linkId, kind, dueAt }
+        if (kind === 'reply' && commented) {
+          out.push({ ...base, accountId: null, skipped: 'Skipped: the same comment goes on one post only. Write a separate comment for this post.' })
+          continue
+        }
+        if (!accounts.length) {
+          out.push({ ...base, accountId: null, skipped: 'Skipped: none of your synchronized profiles can be used.' })
+          continue
+        }
+        // One account per post and kind — several of your accounts on one post is coordinated engagement.
+        let chosen: string | null = null
+        let reason: string | null = null
+        // A post by one of your accounts may only be reposted/liked by that same account (else it is
+        // artificial amplification) — checked here too for posts not yet in Post Links.
+        const owner = !linkId && kind !== 'reply' && parsed.handle ? this.deps.accounts.byHandle(parsed.handle) : null
+        for (let i = 0; i < accounts.length; i++) {
+          const accountId = accounts[(turn + i) % accounts.length]!
+          if (!linkId) {
+            if (owner && owner.id !== accountId) {
+              reason ??= `This post is from ${owner.label}, one of your accounts — only that account may ${kind === 'repost' ? 'repost' : 'like'} it.`
+              continue
+            }
+            chosen = accountId
+            break
+          }
+          const check = this.deps.engagement.check({ linkId, accountId, kind, dueAt, note: '', replyText: kind === 'reply' ? config.actions.commentText : '' })
+          const blocking = check.problems.find((p) => p.blocking)
+          if (!blocking) {
+            chosen = accountId
+            break
+          }
+          reason ??= blocking.message
+        }
+        if (chosen) {
+          turn++
+          if (kind === 'reply') commented = true
+        }
+        out.push({ ...base, accountId: chosen, skipped: chosen ? null : `Skipped: ${reason ?? 'no account can take it.'}` })
+      }
+    }
+    return out
+  }
+
   private planEngagement(runId: Id, config: AutomationConfig, targets: { accountId: string | null }[]): number {
     const accounts = targets.map((t) => t.accountId).filter((a): a is string => Boolean(a))
     if (!accounts.length) return 0
-    const links = config.actions.engagementLinks.map((l) => parsePostUrl(l)).filter((l): l is NonNullable<ReturnType<typeof parsePostUrl>> => Boolean(l))
-    const kinds = ([config.actions.repost && 'repost', config.actions.comment && 'reply', config.actions.like && 'like'].filter(Boolean) as ('repost' | 'reply' | 'like')[])
-    if (!links.length || !kinds.length) return 0
     let created = 0
-    let turn = 0
-    for (const parsed of links) {
-      // The link is saved (or found) in Post Links first.
-      const existing = this.deps.db.get<{ id: string }>('SELECT id FROM post_links WHERE url = :url OR post_id = :postId', { url: parsed.url, postId: parsed.postId })
-      const linkId = existing?.id ?? randomUUID()
-      if (!existing) {
+    // Exactly the assignment the preview showed.
+    for (const assignment of this.engagementAssignments(config, accounts)) {
+      if (!assignment.accountId) continue
+      const { kind, accountId, dueAt } = assignment
+      const parsed = { url: assignment.url, postId: assignment.postId, handle: assignment.handle }
+      // The link is saved (or found) in Post Links first — looked up again, since an earlier assignment
+      // in this loop (another action on the same new post) may have just saved it.
+      const saved = assignment.linkId ?? this.deps.db.get<{ id: string }>('SELECT id FROM post_links WHERE url = :url OR post_id = :postId', { url: parsed.url, postId: parsed.postId })?.id ?? null
+      const linkId = saved ?? randomUUID()
+      if (!saved) {
         const now = this.now().toISOString()
         this.deps.db.run(
           `INSERT INTO post_links (id, url, post_id, handle, account_id, draft_id, task_id, source, preview, published_at, created_at, updated_at, notes, tags)
@@ -986,12 +1051,8 @@ export class RunService {
           { id: linkId, url: parsed.url, postId: parsed.postId, handle: parsed.handle, now }
         )
       }
-      for (const kind of kinds) {
-        // One account per post and kind — several of your accounts on one post is coordinated engagement.
-        for (let i = 0; i < accounts.length; i++) {
-          const accountId = accounts[(turn + i) % accounts.length]!
-          // A campaign's run time becomes the task's due time (now = no due time).
-          const dueAt = config.schedule.when === 'schedule' ? config.schedule.startAt : null
+      {
+        {
           const result = this.deps.engagement.create({ linkIds: [linkId], accountId, kind, dueAt, note: `From campaign “${config.name}”`, replyText: kind === 'reply' ? config.actions.commentText : '' })
           if (result.created.length) {
             const task = result.created[0]!
@@ -1020,8 +1081,6 @@ export class RunService {
               })
             })
             created++
-            turn++
-            break
           }
         }
       }

@@ -182,8 +182,8 @@ check('… a second retry of the succeeded task is refused', (() => {
   }
 })())
 check('… the same campaign repost can’t be queued twice (idempotency key)', db.get<{ n: number }>("SELECT COUNT(*) AS n FROM tasks WHERE idempotency_key LIKE 'engage:%' GROUP BY idempotency_key HAVING n > 1") === undefined)
-const again = await runs.start(repostCampaign(['https://x.com/author_a/status/1900000000000000101']))
-check('… reposting the same post again from your accounts plans nothing (one of your accounts per post)', items(again.id).length === 0)
+const again = runs.plan(repostCampaign(['https://x.com/author_a/status/1900000000000000101']))
+check('… reposting the same post again from your accounts is refused, with the reason in the preview (one of your accounts per post)', !again.ok && again.engagementTasks === 0 && (again.engagementPreview[0]?.skipped ?? '').startsWith('Skipped:'), JSON.stringify(again.engagementPreview))
 script['x.repost'] = (p) => ({ url: p.url, postId: '1', handle: 'acct', alreadyReposted: true })
 const r5 = await runs.start(repostCampaign(['https://x.com/author_e/status/1900000000000000105']))
 await waitFor(() => settled(r5.id))
@@ -241,6 +241,56 @@ await queue.stop()
 boot()
 await sleep(300)
 check('a repost interrupted by a shutdown needs review — it is never repeated on its own', db.get<{ status: string }>("SELECT status FROM tasks WHERE id = 'interrupted'")?.status === 'needs-review' && !calls.some((c) => c.params.url === 'https://x.com/author_k/status/1900000000000000111'))
+
+// ── 6b. "Select all" posts: each post gets one account, accounts take turns, Start = the preview ──
+db.run("UPDATE automation_runs SET status = 'stopped' WHERE status = 'publishing'")
+const many = ['https://x.com/news_one/status/1900000000000000201', 'https://x.com/news_two/status/1900000000000000202', 'https://x.com/news_three/status/1900000000000000203', 'https://x.com/news_four/status/1900000000000000204']
+const at6b = new Date(Date.now() + 3_600_000).toISOString()
+const plan6b = runs.plan(repostCampaign(many, 'schedule', at6b))
+const assigned6b = plan6b.engagementPreview.filter((p) => !p.skipped)
+check('select all (4 posts, 3 accounts): every post assigned to exactly one account, accounts take turns', plan6b.ok && assigned6b.length === 4 && new Set(assigned6b.map((p) => p.url)).size === 4 && new Set(assigned6b.slice(0, 3).map((p) => p.accountId)).size === 3 && assigned6b[3]!.accountId === assigned6b[0]!.accountId, JSON.stringify(plan6b.engagementPreview.map((p) => [p.url.slice(-3), p.accountLabel, p.skipped])))
+check('… the preview shows each post’s account label and its scheduled time', assigned6b.every((p) => p.accountLabel?.startsWith('Account ') && p.runAt === at6b))
+const run6b = await runs.start(repostCampaign(many, 'schedule', at6b))
+const queued6b = db.all<{ account_id: string; payload: string; run_after: string }>("SELECT t.account_id, t.payload, t.run_after FROM tasks t JOIN run_items i ON t.idempotency_key = 'engage:' || i.engagement_task_id WHERE i.run_id = :id", { id: run6b.id })
+check('… Start creates exactly the previewed assignment: one repost task per post, same accounts, at the chosen time', queued6b.length === 4 && assigned6b.every((p) => queued6b.some((q) => JSON.parse(q.payload).url === p.url && q.account_id === p.accountId && q.run_after === at6b)), JSON.stringify(queued6b.map((q) => [JSON.parse(q.payload).url.slice(-3), q.account_id.slice(-2)])))
+check('… never several of your accounts on the same post', db.get<{ n: number }>("SELECT COUNT(*) AS n FROM (SELECT link_id FROM engagement_tasks WHERE kind = 'repost' GROUP BY link_id HAVING COUNT(DISTINCT account_id) > 1)")!.n === 0)
+await runs.stop(run6b.id)
+
+// Your own post: only its own account may repost it; a post another account already reposted is skipped.
+const own = 'https://x.com/acct_2/status/1900000000000000301'
+const taken = 'https://x.com/news_one/status/1900000000000000201' // planned above (now cancelled → its task is still open)
+db.run("UPDATE engagement_tasks SET status = 'done' WHERE link_id = (SELECT id FROM post_links WHERE post_id = '1900000000000000201')")
+const plan6c = runs.plan(repostCampaign([own, taken, 'https://x.com/news_five/status/1900000000000000205']))
+const pOwn = plan6c.engagementPreview.find((p) => p.url === own)
+const pTaken = plan6c.engagementPreview.find((p) => p.url === taken)
+check('your own post (by @acct_2) is assigned only to that account, never amplified by your others', pOwn?.accountId === ACC(2) && !pOwn.skipped, JSON.stringify(pOwn))
+check('a post one of your accounts already reposted is skipped, with the reason shown', Boolean(pTaken?.skipped) && /already/.test(pTaken!.skipped!), JSON.stringify(pTaken))
+check('… the rest still go ahead (2 of 3 assigned)', plan6c.ok && plan6c.engagementTasks === 2)
+
+// A comment on several selected posts: on one post only; the others skipped with the reason.
+const plan6d = runs.plan(commentCampaign('https://x.com/news_six/status/1900000000000000206', 'One thoughtful comment'))
+const multiComment = toConfig({ ...defaultChoices(), name: 'Comment many', action: 'comment', repostLinks: ['https://x.com/news_six/status/1900000000000000206', 'https://x.com/news_seven/status/1900000000000000207', 'https://x.com/news_eight/status/1900000000000000208'], commentText: 'One thoughtful comment', when: 'now', startAt: null })
+const plan6e = runs.plan(multiComment)
+check('comment with "select all" (3 posts): one comment, 2 skipped with the reason', plan6d.ok && plan6e.ok && plan6e.engagementTasks === 1 && plan6e.engagementPreview.filter((p) => (p.skipped ?? '').includes('one post only')).length === 2)
+const callsBefore6e = calls.length
+const run6e = await runs.start(multiComment)
+await waitFor(() => settled(run6e.id))
+check('… Start posts the comment once, on the first post only', calls.slice(callsBefore6e).filter((c) => c.cmd === 'x.publish' && c.params.inReplyTo).length === 1 && calls.slice(callsBefore6e).find((c) => c.params.inReplyTo)?.params.inReplyTo === '1900000000000000206' && run(run6e.id).status === 'completed')
+
+// One account failing does not stop the other accounts' reposts.
+const failingAccount = ACC(1)
+script['x.repost'] = (p) => {
+  if (calls.at(-1) && calls.filter((c) => c.cmd === 'x.repost').length && String(p.expectedHandle) === 'acct_1') throw new EngineError('SESSION_EXPIRED', 'Signed out', false, false)
+  return { url: p.url, postId: String(p.url).split('/').pop(), handle: 'acct', alreadyReposted: false }
+}
+const three = ['https://x.com/news_nine/status/1900000000000000209', 'https://x.com/news_ten/status/1900000000000000210', 'https://x.com/news_eleven/status/1900000000000000211']
+const run6f = await runs.start(repostCampaign(three))
+await waitFor(() => settled(run6f.id), 10_000)
+const it6f = items(run6f.id)
+check('one account signed out: its repost fails, the other accounts’ reposts still go through', it6f.length === 3 && it6f.filter((i) => i.taskStatus === 'succeeded').length === 2 && it6f.filter((i) => i.taskStatus === 'failed' && i.accountId === failingAccount).length === 1, JSON.stringify(it6f.map((i) => [i.accountId?.slice(-2), i.taskStatus])))
+check('… and the campaign reports the partial failure (Completed, 2 published, 1 failed)', run(run6f.id).status === 'completed' && run(run6f.id).counts.published === 2 && run(run6f.id).counts.failed === 1)
+delete script['x.repost']
+db.run('UPDATE tasks SET held = 0')
 
 // ── 7. Scheduled posts go out at their time (not up to a scheduler tick later), never before ──
 const scheduler = new Scheduler({ db, schedules, accounts, publishing, settings: () => publishing.getSettings(), notifier, log: log as never, onChange() {}, tickMs: 15_000 })

@@ -342,7 +342,8 @@ check('… first profile posts the draft, the other an independent copy with the
     actions: { ...repostCfg.actions, repost: false, comment: true, commentText: 'Great write-up — the section on caching helped me.', engagementLinks: ['https://x.com/author_one/status/1888000000000000011'] }
   }
   check('comment campaign: comment text required', runs.plan({ ...commentCfg, actions: { ...commentCfg.actions, commentText: ' ' } }).problems.some((p) => p.blocking && p.message.includes('Write the comment')))
-  check('comment campaign: the same comment on several posts is refused (repetitive automated replies)', runs.plan({ ...commentCfg, actions: { ...commentCfg.actions, engagementLinks: ['https://x.com/author_one/status/1888000000000000011', 'https://x.com/author_two/status/1888000000000000012'] } }).problems.some((p) => p.blocking && p.message.includes('one post')))
+  const several = runs.plan({ ...commentCfg, actions: { ...commentCfg.actions, engagementLinks: ['https://x.com/author_one/status/1888000000000000011', 'https://x.com/author_two/status/1888000000000000012'] } })
+  check('comment campaign on several posts: the comment goes on the first post only, the others are skipped with the reason (no repetitive replies)', several.ok && several.engagementTasks === 1 && several.engagementPreview.length === 2 && !several.engagementPreview[0]!.skipped && (several.engagementPreview[1]!.skipped ?? '').includes('one post only') && several.problems.some((p) => !p.blocking && p.message.includes('one post only')), JSON.stringify(several.engagementPreview))
   const cplan = runs.plan(commentCfg)
   check('comment campaign: one comment on one post', cplan.ok && cplan.engagementTasks === 1, JSON.stringify(cplan.problems))
   const cr = await runs.start(commentCfg)
@@ -355,8 +356,7 @@ check('… first profile posts the draft, the other an independent copy with the
   engagement.setStatus([firstTask.id], 'done')
   check('… marking the task done shows as done in the campaign results', itemsOf(cr.id).some((i) => i.engagementStatus === 'done'))
   const again = runs.plan(commentCfg)
-  const second = await runs.start(commentCfg)
-  check('… running it again creates no task: the same comment can’t come from another of your accounts, nor twice from one', itemsOf(second.id).length === 0 && again.ok, JSON.stringify(itemsOf(second.id).map((i) => [i.accountId, i.text])))
+  check('… running it again is refused: the same comment can’t come from another of your accounts, nor twice from one (reason shown in the preview)', !again.ok && again.engagementTasks === 0 && (again.engagementPreview[0]?.skipped ?? '').includes('same comment'), JSON.stringify(again.engagementPreview))
   check('post campaign still needs posts', runs.plan({ ...repostCfg, actions: { ...repostCfg.actions, publish: true, repost: false, engagementLinks: [] } }).problems.some((p) => p.blocking && p.message.includes('Choose the drafts')))
 }
 
