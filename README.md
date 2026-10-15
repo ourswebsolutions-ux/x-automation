@@ -13,9 +13,10 @@ pick accounts:
   Optionally add a **comment**, which each account posts as a reply to its own post once X confirms
   the post. Then **Publish now** or **Schedule** it on every synchronized profile that can post, with
   live progress for posts and comments, or **Use in a campaign**.
-- **Campaigns:** choose **Post**, **Repost** or **Comment**, the content, and a run time (now, or any
-  later date and time), then **Start campaign**.
-  - Every eligible synchronized profile takes part; the backend decides which when the campaign
+- **Campaigns:** choose **Post**, **Repost** or **Comment**, the profiles (all, or the ones you
+  tick), and the content, then **Run campaign**. It starts right away; there is no date or time to
+  choose.
+  - Only eligible synchronized profiles take part; the backend decides which when the campaign
     starts.
   - The campaign shows Running, Completed or Failed, with a result for each profile, post and comment.
   - Reposts and comments on Post Links are tasks you complete yourself: one account per post, never
@@ -323,7 +324,7 @@ its own. Details and the selector caveat: [docs/publishing.md](docs/publishing.m
 ### Post links & engagement (Phase 9)
 
 Published posts are saved as links; more can be pasted or imported (TXT/CSV), tagged, noted and
-exported. Campaign reposts and comments are performed by X Auto at their run time and counted only once X confirms them (one of your accounts per post); other engagement tasks (likes, follow-ups, tasks you add in Post Links) are a checklist the user acts on.
+exported. Campaign reposts and comments are performed by X Auto as soon as the campaign runs, and counted only once X confirms them (one of your accounts per post); other engagement tasks (likes, follow-ups, tasks you add in Post Links) are a checklist the user acts on.
 Guardrails against self-amplification and coordinated engagement apply to both. [docs/engagement.md](docs/engagement.md).
 
 ### Create Post and Campaigns (Phase 12)

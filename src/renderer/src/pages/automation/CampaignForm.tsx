@@ -9,19 +9,11 @@ import { useBrowserProfiles } from '@/data/ixbrowser'
 import { useLinks } from '@/data/links'
 import { errorMessage, relay } from '@/lib/bridge'
 import { cn } from '@/lib/cn'
-import { formatDateTime } from '@/lib/format'
 import { NAV_ITEMS } from '@/app/navigation'
 import { DraftPicker } from './DraftPicker'
 
 export { choicesFrom, defaultChoices, toConfig, type CampaignAction, type CampaignChoices } from '@shared/lib/campaign'
 import type { CampaignAction, CampaignChoices } from '@shared/lib/campaign'
-
-const pad = (n: number) => String(n).padStart(2, '0')
-const toLocalInput = (iso: string | null) => {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
 
 function Section({ step, title, children }: { step: number; title: string; children: ReactNode }) {
   return (
@@ -80,7 +72,7 @@ function Participants({ plan, checking }: { plan: RunPlan | null; checking: bool
   )
 }
 
-/** Campaign: action → posts → run time. Profiles aren't chosen: every eligible synchronized profile takes part. */
+/** Campaign: action → profiles → posts (and comments), then Run campaign starts it at once. No run date or time. */
 export function CampaignForm({ value, onChange, plan, checking }: { value: CampaignChoices; onChange: (next: CampaignChoices) => void; plan: RunPlan | null; checking: boolean }) {
   const navigate = useNavigate()
   const drafts = useDrafts()
@@ -108,8 +100,8 @@ export function CampaignForm({ value, onChange, plan, checking }: { value: Campa
         {value.action !== 'post' && (
           <p className="text-xs text-fg-subtle">
             {value.action === 'repost'
-              ? 'X Auto reposts each chosen post at the run time from one of your accounts, in its own profile, and counts it only once the post shows as reposted on X.'
-              : 'X Auto posts your comment as a reply to the chosen post at the run time, from one of your accounts, and counts it only once X confirms it.'}{' '}
+              ? 'X Auto reposts each chosen post as soon as the campaign runs, from one of your accounts, in its own profile, and counts it only once the post shows as reposted on X.'
+              : 'X Auto posts each comment as a reply to its post as soon as the campaign runs, from one of your accounts, and counts it only once X confirms it.'}{' '}
             One of your accounts per post — never the same action from several of your accounts (that is coordinated engagement).{value.action === 'comment' ? ' One comment per post: each saved comment goes on its own target post, or on the next selected post.' : ''}
           </p>
         )}
@@ -151,7 +143,7 @@ export function CampaignForm({ value, onChange, plan, checking }: { value: Campa
             <LinkPicker value={value.repostLinks} onChange={(repostLinks) => set({ repostLinks })} />
             {value.action === 'comment' && <CommentPicker value={value.commentIds ?? []} onChange={(commentIds) => set({ commentIds })} />}
             {value.action === 'comment' && !(value.commentIds ?? []).length && (
-              <Field label="Or write one comment" htmlFor="camp-comment" hint="Written by you and relevant to the post; posted as a reply to one selected post at the run time. (To comment on your own new posts, add the comment in Create Post.)">
+              <Field label="Or write one comment" htmlFor="camp-comment" hint="Written by you and relevant to the post; posted as a reply to one selected post when the campaign runs. (To comment on your own new posts, add the comment in Create Post.)">
                 <Textarea id="camp-comment" rows={3} maxLength={280} value={value.commentText} onChange={(e) => set({ commentText: e.target.value })} />
               </Field>
             )}
@@ -159,31 +151,8 @@ export function CampaignForm({ value, onChange, plan, checking }: { value: Campa
         )}
       </Section>
 
-      <AssignmentPreview plan={plan} checking={checking} action={value.action} when={value.when} />
+      <AssignmentPreview plan={plan} checking={checking} action={value.action} />
 
-      <Section step={4} title="Run time">
-        <SegmentedControl<'now' | 'schedule'>
-          aria-label="Run time"
-          value={value.when}
-          onChange={(when) => set({ when, startAt: when === 'schedule' ? (value.startAt ?? new Date(Date.now() + 3_600_000).toISOString()) : null })}
-          options={[
-            { value: 'now', label: 'Now' },
-            { value: 'schedule', label: 'At a date and time' }
-          ]}
-          className="self-start"
-        />
-        {value.when === 'schedule' && (
-          <Input
-            id="camp-start"
-            aria-label="Run at"
-            type="datetime-local"
-            value={toLocalInput(value.startAt)}
-            onChange={(e) => set({ startAt: e.target.value ? new Date(e.target.value).toISOString() : null })}
-            wrapperClassName="w-60"
-          />
-        )}
-        <p className="text-xs text-fg-subtle">Any future date and time, in this computer’s time zone. Posts go out while X Auto is running (the window can be closed), one at a time per profile.</p>
-      </Section>
     </div>
   )
 }
@@ -192,16 +161,15 @@ export function CampaignForm({ value, onChange, plan, checking }: { value: Campa
  * Before Start: each selected post, the one randomly chosen account it is assigned to, when it runs,
  * and every skipped post with its reason. Start makes exactly this assignment (same random order).
  */
-function AssignmentPreview({ plan, checking, action, when }: { plan: RunPlan | null; checking: boolean; action: CampaignAction; when: 'now' | 'schedule' }) {
+function AssignmentPreview({ plan, checking, action }: { plan: RunPlan | null; checking: boolean; action: CampaignAction }) {
   const rows =
     action === 'post'
-      ? (plan?.postPreview ?? []).map((p, i) => ({ key: `${p.draftId}|${i}`, title: p.text.trim().replace(/\s+/g, ' ') || 'Image-only post', mono: false, accountLabel: p.accountLabel, runAt: when === 'now' ? null : p.runAt, skipped: null as string | null }))
+      ? (plan?.postPreview ?? []).map((p, i) => ({ key: `${p.draftId}|${i}`, title: p.text.trim().replace(/\s+/g, ' ') || 'Image-only post', mono: false, accountLabel: p.accountLabel, skipped: null as string | null }))
       : (plan?.engagementPreview ?? []).map((r, i) => ({
           key: `${r.url}|${r.kind}|${r.commentId ?? i}`,
           title: [r.url ? r.url.replace('https://x.com/', '') : 'No post', r.kind === 'reply' && r.text ? `“${r.text.replace(/\s+/g, ' ')}”` : ''].filter(Boolean).join(' · '),
           mono: !(r.kind === 'reply' && r.text),
           accountLabel: r.accountLabel,
-          runAt: r.runAt,
           skipped: r.skipped
         }))
   const assigned = rows.filter((r) => !r.skipped).length
@@ -228,7 +196,7 @@ function AssignmentPreview({ plan, checking, action, when }: { plan: RunPlan | n
               ) : (
                 <>
                   <span className="text-xs text-fg">{r.accountLabel ?? 'Account'}</span>
-                  <span className="tabular text-xs text-fg-subtle">{r.runAt ? formatDateTime(r.runAt) : 'Now'}</span>
+                  <span className="tabular text-xs text-fg-subtle">Now</span>
                 </>
               )}
             </li>

@@ -16,12 +16,13 @@
 
 ## Engagement tasks
 
-**Reposts and comments planned by a campaign** are done by X Auto at the campaign's run time (see
-[automation.md](automation.md)):
+**Reposts and comments planned by a campaign** are done by X Auto as soon as the campaign runs
+(see [automation.md](automation.md)):
 
 - They are queue tasks (`repost`, `reply`), one per engagement task (idempotency key `engage:<id>`).
-  They run at the chosen time and survive restarts; a time missed while X Auto was closed is not
-  done late, and you can retry it to do it now.
+  They run right away and survive restarts. A task an earlier version scheduled for later still
+  waits for its time. A time missed while X Auto was closed is not done late, and you can retry the
+  task to do it now.
 - A repost counts only when the post shows *Undo repost* on X; a comment only with X's confirmation
   (or once found among the account's replies).
 - A repost that was clicked but not confirmed waits for your review, like posts. Marking it done

@@ -23,7 +23,7 @@ import { PublishingService } from '../../src/main/services/publishing/publishing
 import { parsePostUrl } from '../../src/main/services/publishing/postUrl'
 import { QueueService } from '../../src/main/services/queue/queueService'
 import { BULK_MAX_ITEMS, bulkItemProblems, parseBulk, reviewItems } from '../../src/shared/lib/bulkParse'
-import { defaultChoices, toConfig } from '../../src/shared/lib/campaign'
+import { choicesFrom, defaultChoices, toConfig } from '../../src/shared/lib/campaign'
 
 const results: string[] = []
 const check = (name: string, ok: boolean, extra = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? ' — ' + String(extra).slice(0, 300) : ''}`)
@@ -229,6 +229,19 @@ check('campaign: Select all 300 bulk drafts on 3 profiles → all 300 planned, o
 const planOne = runs.plan(toConfig({ ...defaultChoices(), action: 'post', draftIds: all300.slice(0, 5), seed: 7, profileScope: 'selected', profileIds: [PRO(2)] }))
 check('campaign: only the chosen profile takes part when you choose profiles', planOne.ok && planOne.profiles.selected === 1 && planOne.postPreview.length === 5 && planOne.postPreview.every((p) => p.accountId === ACC(2)))
 check('… choosing no profiles blocks the start', !runs.plan(toConfig({ ...defaultChoices(), action: 'post', draftIds: all300.slice(0, 2), profileScope: 'selected', profileIds: [] })).ok)
+
+check('an older saved setup with a run time opens without one (it runs now)', (() => {
+  const base = toConfig({ ...defaultChoices(), action: 'post', draftIds: all300.slice(0, 2) })
+  const old = { ...base, schedule: { ...base.schedule, when: 'schedule' as const, startAt: new Date(Date.now() + 86_400_000).toISOString() } }
+  const reopened = toConfig(choicesFrom(old))
+  return !runs.plan(old).ok && reopened.schedule.when === 'now' && reopened.schedule.startAt === null && runs.plan(reopened).ok
+})())
+check('missing selections are refused with a reason: no posts, no comments, no post links', (() => {
+  const noPosts = runs.plan(toConfig({ ...defaultChoices(), action: 'post', draftIds: [] }))
+  const noComment = runs.plan(toConfig({ ...defaultChoices(), action: 'comment', repostLinks: ['https://x.com/a_b/status/1900000000000000801'] }))
+  const noLinks = runs.plan(toConfig({ ...defaultChoices(), action: 'repost', repostLinks: [] }))
+  return !noPosts.ok && noPosts.problems.some((p) => /Choose the drafts/.test(p.message)) && !noComment.ok && noComment.problems.some((p) => /Write the comment/.test(p.message)) && !noLinks.ok && noLinks.problems.some((p) => /post links/.test(p.message))
+})())
 
 // Comments from saved comments: Run now — each comment on one selected post, one comment per post.
 const targets = [1, 2].map((n) => `https://x.com/target_${n}/status/19000000000000007${n}0`)

@@ -113,8 +113,13 @@ function boot(): void {
 boot()
 
 // Like the form: one campaign = one seed (its random account order); pass the same seed to preview and start it.
-const repostCampaign = (links: string[], when: 'now' | 'schedule' = 'now', startAt: string | null = null, seed?: number) => toConfig({ ...defaultChoices(), name: 'Reposts', action: 'repost', repostLinks: links, when, startAt, ...(seed === undefined ? {} : { seed }) })
-const commentCampaign = (link: string, text: string, when: 'now' | 'schedule' = 'now', startAt: string | null = null) => toConfig({ ...defaultChoices(), name: 'Comment', action: 'comment', repostLinks: [link], commentText: text, when, startAt })
+const repostCampaign = (links: string[], seed?: number) => toConfig({ ...defaultChoices(), name: 'Reposts', action: 'repost', repostLinks: links, ...(seed === undefined ? {} : { seed }) })
+const commentCampaign = (link: string, text: string) => toConfig({ ...defaultChoices(), name: 'Comment', action: 'comment', repostLinks: [link], commentText: text })
+const errOf = async (p: Promise<unknown>) => p.then(() => 'none', (e: Error) => e.message)
+/** An older saved setup with a run date and time (campaigns no longer have one). */
+const withRunTime = <T extends ReturnType<typeof toConfig>>(config: T, startAt: string): T => ({ ...config, schedule: { ...config.schedule, when: 'schedule', startAt } })
+/** A campaign planned for a later time by an earlier version (its queued task waits for that time). */
+const legacyScheduled = (runId: string, at: string) => db.run("UPDATE tasks SET run_after = :t, payload = json_set(payload, '$.dueAt', :t) WHERE idempotency_key = 'engage:' || (SELECT engagement_task_id FROM run_items WHERE run_id = :id)", { t: at, id: runId })
 const run = (id: string) => runs.details(id).run
 const items = (id: string) => runs.details(id).items.filter((i) => i.kind === 'engagement')
 const engTask = (id: string) => db.get<{ status: string }>('SELECT status FROM engagement_tasks WHERE id = (SELECT engagement_task_id FROM run_items WHERE run_id = :id)', { id })?.status
@@ -131,15 +136,19 @@ check('… its Post Links task is marked done, and the user is told', engTask(r1
 const t1 = db.get<{ result: string }>("SELECT result FROM tasks WHERE kind = 'repost'")!
 check('… recorded as verified from the post’s state on X (not the click)', JSON.parse(t1.result).verifiedBy === 'post-state')
 
-// ── 2. Scheduled repost: not before its time, then automatically ──
-const dueSoon = new Date(Date.now() + 1500).toISOString()
+// ── 2. No run time: a repost campaign starts right away; a date and time can't be set ──
+const later = new Date(Date.now() + 3_600_000).toISOString()
+const r2Cfg = repostCampaign(['https://x.com/author_b/status/1900000000000000102'])
+check('repost campaign: no date or time in the campaign (it runs now)', r2Cfg.schedule.when === 'now' && r2Cfg.schedule.startAt === null && runs.plan(r2Cfg).ok)
+const timed = runs.plan(withRunTime(r2Cfg, later))
+check('… a run date or time is refused (never scheduled for later), with the reason', !timed.ok && timed.problems.some((p) => p.blocking && /can’t be set/.test(p.message)))
+check('… and Start refuses it too: nothing is queued for later', (await errOf(runs.start(withRunTime(r2Cfg, later)))).includes('can’t be set') && db.get<{ n: number }>("SELECT COUNT(*) AS n FROM tasks WHERE kind = 'repost' AND run_after > :now", { now: new Date().toISOString() })!.n === 0)
+const startedAt2 = Date.now()
 const callsBefore = calls.length
-const r2 = await runs.start(repostCampaign(['https://x.com/author_b/status/1900000000000000102'], 'schedule', dueSoon))
-await sleep(700)
-check('scheduled repost: nothing happens before the chosen time', calls.length === callsBefore && items(r2.id)[0]?.taskStatus === 'queued' && run(r2.id).status === 'publishing')
+const r2 = await runs.start(r2Cfg)
 await waitFor(() => settled(r2.id))
 const c2 = calls.slice(callsBefore).find((c) => c.cmd === 'x.repost')
-check('… it runs automatically at the chosen time (not before)', Boolean(c2) && c2!.at >= new Date(dueSoon).getTime() && c2!.at - new Date(dueSoon).getTime() < 1500, c2 ? `${c2.at - new Date(dueSoon).getTime()} ms after` : 'not run')
+check('… Run campaign: the repost is done immediately (no waiting for a time)', Boolean(c2) && c2!.at - startedAt2 < 3000 && items(r2.id)[0]?.runAt !== null, c2 ? `${c2.at - startedAt2} ms after start` : 'not run')
 check('… and the campaign completes with it', run(r2.id).status === 'completed')
 
 // ── 3. Failures are never shown as completed ──
@@ -197,13 +206,13 @@ await waitFor(() => settled(k1.id))
 const kc = calls.filter((c) => c.cmd === 'x.publish' && c.params.inReplyTo === '1900000000000000106')
 check('comment now: posted as a reply to that post, with your text, from one account', kc.length === 1 && kc[0]!.params.text === 'Thanks — the benchmark section was really useful.')
 check('… Completed only after X confirmed it; the item says Comment posted', run(k1.id).status === 'completed' && items(k1.id)[0]?.taskStatus === 'succeeded' && engTask(k1.id) === 'done')
-const kDue = new Date(Date.now() + 1500).toISOString()
-const k2 = await runs.start(commentCampaign('https://x.com/author_g/status/1900000000000000107', 'Scheduled reply text', 'schedule', kDue))
-await sleep(700)
-check('scheduled comment: nothing is posted before the chosen time', !calls.some((c) => c.params.inReplyTo === '1900000000000000107'))
+const k2Cfg = commentCampaign('https://x.com/author_g/status/1900000000000000107', 'Reply posted right away')
+check('comment campaign: a run date or time is refused, nothing posted for later', !runs.plan(withRunTime(k2Cfg, later)).ok && (await errOf(runs.start(withRunTime(k2Cfg, later)))).includes('can’t be set') && !calls.some((c) => c.params.inReplyTo === '1900000000000000107'))
+const k2Start = Date.now()
+const k2 = await runs.start(k2Cfg)
 await waitFor(() => settled(k2.id))
 const k2c = calls.find((c) => c.params.inReplyTo === '1900000000000000107')
-check('… posted automatically at the chosen time', Boolean(k2c) && k2c!.at >= new Date(kDue).getTime() && run(k2.id).status === 'completed')
+check('… without one it is posted immediately and confirmed', Boolean(k2c) && k2c!.at - k2Start < 3000 && run(k2.id).status === 'completed')
 script['x.publish'] = () => {
   throw new EngineError('REJECTED', 'X did not accept the post (X said: Replies are limited).', false, true)
 }
@@ -212,21 +221,30 @@ await waitFor(() => settled(k3.id))
 check('comment X refuses: Failed with X’s own words, campaign Failed', items(k3.id)[0]?.taskStatus === 'failed' && (items(k3.id)[0]?.error ?? '').includes('Replies are limited') && run(k3.id).status === 'failed', items(k3.id)[0]?.error ?? '')
 delete script['x.publish']
 
-// ── 6. Restarts: scheduled reposts survive; a missed time is not done late ──
-const dueAfterRestart = new Date(Date.now() + 1200).toISOString()
-const r6 = await runs.start(repostCampaign(['https://x.com/author_i/status/1900000000000000109'], 'schedule', dueAfterRestart))
+// ── 6. Restarts: queued reposts survive; campaigns scheduled by an earlier version are kept; a missed time is not done late ──
 await queue.stop()
-boot() // X Auto restarted: new services, same database
+const r6 = await runs.start(repostCampaign(['https://x.com/author_i/status/1900000000000000109']))
+boot() // X Auto restarted before the queue took it: new services, same database
 await waitFor(() => settled(r6.id))
-check('after a restart, the scheduled repost still runs at its time', run(r6.id).status === 'completed' && calls.some((c) => c.cmd === 'x.repost' && c.params.url === 'https://x.com/author_i/status/1900000000000000109' && c.at >= new Date(dueAfterRestart).getTime()))
+check('after a restart, a campaign’s queued repost still runs (once)', run(r6.id).status === 'completed' && calls.filter((c) => c.cmd === 'x.repost' && c.params.url === 'https://x.com/author_i/status/1900000000000000109').length === 1)
+// A campaign an earlier version scheduled for a later time: kept as it was (not deleted, not published early).
+const dueAfterRestart = new Date(Date.now() + 1200).toISOString()
+await queue.stop()
+const r6b = await runs.start(repostCampaign(['https://x.com/author_l/status/1900000000000000112']))
+legacyScheduled(r6b.id, dueAfterRestart)
+boot()
+await sleep(400)
+check('an older scheduled campaign is kept: nothing done before its time', !calls.some((c) => c.params.url === 'https://x.com/author_l/status/1900000000000000112') && items(r6b.id)[0]?.taskStatus === 'queued')
+await waitFor(() => settled(r6b.id))
+check('… and it runs at its time, as it was planned', run(r6b.id).status === 'completed' && calls.some((c) => c.cmd === 'x.repost' && c.params.url === 'https://x.com/author_l/status/1900000000000000112' && c.at >= new Date(dueAfterRestart).getTime()))
 // A repost whose time passed long ago while X Auto was closed.
 const longAgo = new Date(Date.now() - 2 * 3_600_000).toISOString()
 db.run("UPDATE automation_runs SET status = 'stopped' WHERE status = 'publishing'")
 await queue.stop()
 const r7 = await (async () => {
   // Planned while the app ran, then "closed" until long after its time.
-  const startedRun = await runs.start(repostCampaign(['https://x.com/author_j/status/1900000000000000110'], 'schedule', new Date(Date.now() + 3_600_000).toISOString()))
-  db.run("UPDATE tasks SET run_after = :t, payload = json_set(payload, '$.dueAt', :t) WHERE idempotency_key = 'engage:' || (SELECT engagement_task_id FROM run_items WHERE run_id = :id)", { t: longAgo, id: startedRun.id })
+  const startedRun = await runs.start(repostCampaign(['https://x.com/author_j/status/1900000000000000110']))
+  legacyScheduled(startedRun.id, longAgo)
   return startedRun
 })()
 const before7 = calls.length
@@ -246,18 +264,20 @@ check('a repost interrupted by a shutdown needs review — it is never repeated 
 // ── 6b. "Select all" posts: each post gets one account, accounts take turns, Start = the preview ──
 db.run("UPDATE automation_runs SET status = 'stopped' WHERE status = 'publishing'")
 const many = ['https://x.com/news_one/status/1900000000000000201', 'https://x.com/news_two/status/1900000000000000202', 'https://x.com/news_three/status/1900000000000000203', 'https://x.com/news_four/status/1900000000000000204']
-const at6b = new Date(Date.now() + 3_600_000).toISOString()
-const plan6b = runs.plan(repostCampaign(many, 'schedule', at6b, 6060))
+const plan6b = runs.plan(repostCampaign(many, 6060))
 const assigned6b = plan6b.engagementPreview.filter((p) => !p.skipped)
 check('select all (4 posts, 3 accounts): every post assigned to exactly one account, accounts take turns', plan6b.ok && assigned6b.length === 4 && new Set(assigned6b.map((p) => p.url)).size === 4 && new Set(assigned6b.slice(0, 3).map((p) => p.accountId)).size === 3 && assigned6b[3]!.accountId === assigned6b[0]!.accountId, JSON.stringify(plan6b.engagementPreview.map((p) => [p.url.slice(-3), p.accountLabel, p.skipped])))
-check('… the preview shows each post’s account label and its scheduled time', assigned6b.every((p) => p.accountLabel?.startsWith('Account ') && p.runAt === at6b))
-const firstPicks = new Set([11, 12, 13, 14, 15, 16, 17, 18].map((seed) => runs.plan(toConfig({ ...defaultChoices(), name: 'R', action: 'repost', repostLinks: many, when: 'now', startAt: null, seed })).engagementPreview[0]?.accountId))
+check('… the preview shows each post’s account label, to run now (no time)', assigned6b.every((p) => p.accountLabel?.startsWith('Account ') && p.runAt === null))
+const firstPicks = new Set([11, 12, 13, 14, 15, 16, 17, 18].map((seed) => runs.plan(toConfig({ ...defaultChoices(), name: 'R', action: 'repost', repostLinks: many, seed })).engagementPreview[0]?.accountId))
 check('reposts: new campaigns draw accounts at random (not always the same first account), still one account per post', firstPicks.size > 1, [...firstPicks].join())
-const run6b = await runs.start(repostCampaign(many, 'schedule', at6b, 6060))
+await queue.stop() // keep the tasks queued while they are checked
+const start6b = new Date().toISOString()
+const run6b = await runs.start(repostCampaign(many, 6060))
 const queued6b = db.all<{ account_id: string; payload: string; run_after: string }>("SELECT t.account_id, t.payload, t.run_after FROM tasks t JOIN run_items i ON t.idempotency_key = 'engage:' || i.engagement_task_id WHERE i.run_id = :id", { id: run6b.id })
-check('… Start creates exactly the previewed assignment: one repost task per post, same accounts, at the chosen time', queued6b.length === 4 && assigned6b.every((p) => queued6b.some((q) => JSON.parse(q.payload).url === p.url && q.account_id === p.accountId && q.run_after === at6b)), JSON.stringify(queued6b.map((q) => [JSON.parse(q.payload).url.slice(-3), q.account_id.slice(-2)])))
+check('… Start creates exactly the previewed assignment: one repost task per post, same accounts, due now (no later time)', queued6b.length === 4 && assigned6b.every((p) => queued6b.some((q) => JSON.parse(q.payload).url === p.url && q.account_id === p.accountId && q.run_after >= start6b && q.run_after <= new Date().toISOString() && JSON.parse(q.payload).dueAt === null)), JSON.stringify(queued6b.map((q) => [JSON.parse(q.payload).url.slice(-3), q.account_id.slice(-2)])))
 check('… never several of your accounts on the same post', db.get<{ n: number }>("SELECT COUNT(*) AS n FROM (SELECT link_id FROM engagement_tasks WHERE kind = 'repost' GROUP BY link_id HAVING COUNT(DISTINCT account_id) > 1)")!.n === 0)
 await runs.stop(run6b.id)
+boot()
 
 // Your own post: only its own account may repost it; a post another account already reposted is skipped.
 const own = 'https://x.com/acct_2/status/1900000000000000301'

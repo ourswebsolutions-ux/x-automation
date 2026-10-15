@@ -3,7 +3,7 @@
 The sidebar's automation group has three pages:
 
 - **Create Post** for writing posts (and their comments), then publishing or scheduling them.
-- **Campaigns** for posting saved posts from every profile, now or at a date and time.
+- **Campaigns** for posting saved posts, reposting and commenting from your profiles, started right away.
 - **Synchronized Profiles** for syncing IX Browser profiles and seeing which ones can post.
 
 Dashboard, Post Links and Settings are unchanged.
@@ -131,17 +131,17 @@ actions such as **Change time**, **Publish now**, **Cancel schedule** or **Edit 
 
 ## Campaigns
 
-The campaign form has four choices and one button: **Run campaign** (or **Schedule campaign** for a
-date and time).
+The campaign form has three choices and one button, **Run campaign**. A campaign has no run date or
+time: it starts when you press the button.
 
 1. **Action:**
    - **Post** publishes your saved posts. A post that carries a comment is followed by that comment,
      as a reply from the same account.
-   - **Repost**: X Auto reposts each chosen post (from Post Links) at the run time, in one randomly
+   - **Repost**: X Auto reposts each chosen post (from Post Links) as soon as the campaign runs, in one randomly
      chosen account's profile (one account per post; accounts are drawn in the campaign's random
      order). It counts only once the post shows **Undo repost** on X (reloaded if
      needed). A post already reposted from that account counts as done without clicking again.
-   - **Comment**: X Auto posts comments as replies at the run time, through the same composer and
+   - **Comment**: X Auto posts comments as replies as soon as the campaign runs, through the same composer and
      checks as posts, and counts each one only once X confirms it.
      - **Saved comments** (Create Post → Bulk comments): choose them, or **Select all** (the unused
        ones shown). A comment with its own target goes on that post. The others take the selected
@@ -175,11 +175,17 @@ date and time).
    - For Repost or Comment, choose posts from Post Links (**Select all** works here too). For
      Comment, also choose saved comments, or write one.
    - Up to 300 posts or post links per campaign.
-4. **Run time:** **Now**, or **at a date and time**, including tomorrow or any later date, in this
-   computer's time zone. The time is stored in UTC. For reposts and comments it becomes the task's due
-   time.
 
-**Run campaign** starts it at once, with no date or time to enter for each post, comment or repost.
+**Run campaign** starts it at once, with no date or time to enter for the campaign or for any post,
+comment or repost.
+
+- **There is no scheduling in campaigns.** The engine refuses a campaign config that carries a run
+  date or time, for example from an older saved setup or a dashboard quick start. It is never
+  scheduled for later. Opening such a setup in the form drops the time, and it runs now.
+- **Campaigns already scheduled** by an earlier version are kept as they were. They are not
+  deleted, and not published early: they still run at their planned time, and they can be stopped
+  from the campaign status.
+- **Create Post → Publish… → Schedule** is a separate feature and is unchanged.
 
 - Nothing is scheduled item by item. Posts from one account are spaced by the queue (Settings →
   Automation), and X's limits and the account checks still apply.

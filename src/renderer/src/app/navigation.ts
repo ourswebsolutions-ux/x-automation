@@ -57,7 +57,7 @@ export const NAV_ITEMS: Record<RouteId, NavItem> = {
     id: 'campaigns',
     path: '/campaigns',
     label: 'Campaigns',
-    description: 'Post saved posts from every synchronized profile now or at a date and time, and follow the results',
+    description: 'Run campaigns from your synchronized profiles — posts, reposts or comments start right away — and follow the results',
     icon: Workflow,
     keywords: ['campaign', 'automation', 'schedule', 'start', 'pause', 'stop', 'queue', 'repost', 'comment', 'results']
   },

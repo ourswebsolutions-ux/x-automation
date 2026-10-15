@@ -325,13 +325,10 @@ const c3 = await drafts.save({ body: 'Next-day campaign post', accountId: null, 
 const nextDay = new Date()
 nextDay.setDate(nextDay.getDate() + 1)
 nextDay.setHours(10, 30, 0, 0)
-started = await runs.start(campaign([c3.id], 'schedule', nextDay.toISOString(), true))
-await waitFor(() => runs.details(started.id).items.every((i) => i.status === 'scheduled'))
-details = runs.details(started.id)
-check('scheduled campaign: every eligible profile has the post at the chosen time', details.items.length === 5 && details.items.every((i) => i.status === 'scheduled' && i.scheduleStatus === 'pending' && i.runAt === nextDay.toISOString()))
-check('scheduled campaign: running until the posts go out', details.run.status === 'publishing')
-await runs.stop(started.id)
-check('stopping it cancels the waiting posts', runs.details(started.id).items.every((i) => i.status === 'skipped'))
+// Campaigns have no run time: one with a date and time (an older saved setup) is refused, nothing scheduled.
+const timedPlan = runs.plan(campaign([c3.id], 'schedule', nextDay.toISOString(), true))
+check('a campaign with a run date or time is refused — campaigns start right away', !timedPlan.ok && timedPlan.problems.some((p) => p.blocking && /can’t be set/.test(p.message)))
+check('… Start refuses it and schedules nothing for later', (await errOf(runs.start(campaign([c3.id], 'schedule', nextDay.toISOString(), true)))).includes('can’t be set') && db.get<{ n: number }>("SELECT COUNT(*) AS n FROM scheduled_posts WHERE draft_id = :id OR draft_id IN (SELECT id FROM drafts WHERE body = 'Next-day campaign post')", { id: c3.id })!.n === 0)
 
 plan = runs.plan(campaign([c2.id]))
 check('campaign with an already-published post is blocked', !plan.ok)

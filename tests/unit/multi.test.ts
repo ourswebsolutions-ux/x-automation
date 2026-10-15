@@ -104,7 +104,7 @@ const runs = new RunService({
   log: log as never,
   onChange() {}
 })
-const campaign = (draftIds: string[], when: 'now' | 'schedule' = 'now', startAt: string | null = null, seed?: number) => toConfig({ ...defaultChoices(), name: 'Launch', action: 'post', draftIds, when, startAt, ...(seed === undefined ? {} : { seed }) })
+const campaign = (draftIds: string[], seed?: number) => toConfig({ ...defaultChoices(), name: 'Launch', action: 'post', draftIds, ...(seed === undefined ? {} : { seed }) })
 const save = (body: string) => drafts.save({ body, accountId: null })
 const saveMany = async (n: number, tag: string) => {
   const out: string[] = []
@@ -123,19 +123,19 @@ check('… and one failing account never pauses the others (no stop-after-failur
 
 // ── 2. Task counts and assignments ──
 const ten = await saveMany(10, 'Ten posts')
-const plan10 = runs.plan(campaign(ten, 'now', null, 101))
+const plan10 = runs.plan(campaign(ten, 101))
 check('10 posts, 10 eligible accounts → 10 tasks (not 100), each account once', plan10.ok && plan10.posts === 10 && plan10.postPreview.length === 10 && new Set(accountsOf(plan10)).size === 10, JSON.stringify({ posts: plan10.posts, accounts: new Set(accountsOf(plan10)).size }))
 check('… every post exactly once', new Set(plan10.postPreview.map((p) => p.draftId)).size === 10)
 check('… never the disabled account or the unavailable profile', !accountsOf(plan10).some((a) => a === ACC(11) || a === ACC(12)))
 const five = await saveMany(5, 'Five posts')
-const plan5 = runs.plan(campaign(five, 'now', null, 202))
+const plan5 = runs.plan(campaign(five, 202))
 check('5 posts, 10 eligible accounts → 5 tasks (not 50) on 5 different accounts', plan5.ok && plan5.posts === 5 && new Set(accountsOf(plan5)).size === 5, JSON.stringify(accountsOf(plan5)))
-const again5 = runs.plan(campaign(five, 'now', null, 202))
+const again5 = runs.plan(campaign(five, 202))
 check('… the same campaign (same seed) previews the same assignment every time', JSON.stringify(accountsOf(again5)) === JSON.stringify(accountsOf(plan5)))
-const draws = new Set([1, 2, 3, 4, 5, 6].map((seed) => accountsOf(runs.plan(campaign(five, 'now', null, seed))).slice().sort().join()))
+const draws = new Set([1, 2, 3, 4, 5, 6].map((seed) => accountsOf(runs.plan(campaign(five, seed))).slice().sort().join()))
 check('… new campaigns draw different accounts (not always the first five)', draws.size > 1 && [...draws].some((d) => d !== eligible.slice(0, 5).slice().sort().join()), [...draws].join(' | '))
 const twelve = await saveMany(12, 'Twelve posts')
-const plan12 = runs.plan(campaign(twelve, 'now', null, 303))
+const plan12 = runs.plan(campaign(twelve, 303))
 const per12 = new Map<string, number>()
 for (const a of accountsOf(plan12)) per12.set(a!, (per12.get(a!) ?? 0) + 1)
 check('12 posts, 10 accounts → 12 tasks; every account gets one before any gets a second', plan12.posts === 12 && per12.size === 10 && Math.max(...per12.values()) === 2 && [...per12.values()].filter((n) => n === 2).length === 2, JSON.stringify([...per12.values()]))
@@ -143,9 +143,9 @@ check('12 posts, 10 accounts → 12 tasks; every account gets one before any get
 // ── 3. Start executes exactly the preview ──
 const p = [await save('Post one'), await save('Post two'), await save('Post three')]
 const seed = 4242
-const plan = runs.plan(campaign(p.map((d) => d.id), 'now', null, seed))
+const plan = runs.plan(campaign(p.map((d) => d.id), seed))
 check('plan: 3 posts → 3 tasks on 3 different accounts, the unavailable profile and disabled account left out', plan.ok && plan.posts === 3 && new Set(accountsOf(plan)).size === 3 && plan.targets.filter((t) => !t.eligible).length === 2)
-const run1 = await runs.start(campaign(p.map((d) => d.id), 'now', null, seed))
+const run1 = await runs.start(campaign(p.map((d) => d.id), seed))
 check('a second start with the same posts is refused (no duplicate campaign)', (await errOf(runs.start(campaign(p.map((d) => d.id))))) !== 'none')
 const done1 = await waitFor(() => runCompleted(run1.id), 20_000)
 const it1 = items(run1.id)
@@ -164,10 +164,10 @@ check('the database refuses the same post twice for one account in a campaign', 
 // ── 4. One account failing does not stop the others; safe retry ──
 stopAll()
 const q = await saveMany(4, 'Failure test')
-const planQ = runs.plan(campaign(q, 'now', null, 77))
+const planQ = runs.plan(campaign(q, 77))
 failing = planQ.postPreview[0]!.accountId
 const before = posted.length
-const run2 = await runs.start(campaign(q, 'now', null, 77))
+const run2 = await runs.start(campaign(q, 77))
 await waitFor(() => posted.length - before === 3 && items(run2.id).some((i) => i.scheduleStatus === 'failed'), 20_000)
 await waitFor(() => runs.details(run2.id).run.status !== 'publishing', 5_000)
 const it2 = items(run2.id)
@@ -186,20 +186,25 @@ const schedule = db.get<{ id: string; draft_id: string; account_id: string; run_
 const dupTask = publishing.enqueue({ id: schedule.id, draftId: schedule.draft_id, accountId: schedule.account_id, runAt: schedule.run_at, status: 'pending', remindedAt: null, createdAt: at, updatedAt: at })
 check('… queueing the same schedule again returns the existing task (idempotency key)', dupTask.id === failedTask.id && db.get<{ n: number }>('SELECT COUNT(*) AS n FROM tasks WHERE schedule_id = :id', { id: schedule.id })!.n === 1)
 
-// ── 5. Scheduling: every task at the chosen time, nothing early ──
+// ── 5. No run time: a post campaign goes out now; a date and time can't be set ──
 stopAll()
 const sIds = await saveMany(4, 'Tomorrow')
 const tomorrow = new Date()
 tomorrow.setDate(tomorrow.getDate() + 1)
 tomorrow.setHours(9, 0, 0, 0)
 const before5 = posted.length
-const planS = runs.plan(campaign(sIds, 'schedule', tomorrow.toISOString(), 55))
-check('scheduled campaign preview: each post with its account and the chosen time', planS.postPreview.length === 4 && planS.postPreview.every((pp) => pp.runAt === tomorrow.toISOString() && pp.accountLabel?.startsWith('Account ')))
-const run3 = await runs.start(campaign(sIds, 'schedule', tomorrow.toISOString(), 55))
+const timed = { ...campaign(sIds, 55), schedule: { ...campaign(sIds, 55).schedule, when: 'schedule' as const, startAt: tomorrow.toISOString() } }
+check('post campaign: no date or time in the campaign; one with a run time is refused (never scheduled for later)', campaign(sIds, 55).schedule.when === 'now' && !runs.plan(timed).ok && runs.plan(timed).problems.some((p) => p.blocking && /can’t be set/.test(p.message)))
+check('… Start refuses it as well, and nothing is scheduled', (await errOf(runs.start(timed))).includes('can’t be set') && db.get<{ n: number }>("SELECT COUNT(*) AS n FROM scheduled_posts WHERE run_at > :now AND status = 'pending'", { now: new Date(Date.now() + 60_000).toISOString() })!.n === 0)
+const planS = runs.plan(campaign(sIds, 55))
+check('campaign preview: each post with its account, to go out now', planS.ok && planS.postPreview.length === 4 && planS.postPreview.every((pp) => pp.accountLabel?.startsWith('Account ') && new Date(pp.runAt!).getTime() <= Date.now() + 1000))
+// The queue is stopped right after Run campaign (as if X Auto closed): the posts wait in the queue, due now.
+await queue.stop()
+const run3 = await runs.start(campaign(sIds, 55))
 await waitFor(() => items(run3.id).length === 4 && items(run3.id).every((i) => i.status === 'scheduled'))
 const it3 = items(run3.id)
-check('scheduled campaign: 4 schedules (one per post) at the chosen time, on the previewed accounts', it3.length === 4 && it3.every((i) => i.scheduleStatus === 'pending' && i.runAt === tomorrow.toISOString()) && planS.postPreview.every((pp) => it3.some((i) => i.sourceDraftId === pp.draftId && i.accountId === pp.accountId)))
-check('… nothing is published early', posted.length === before5)
+check('Run campaign: 4 posts (one per post), due immediately on the previewed accounts — no later time', it3.length === 4 && it3.every((i) => ['pending', 'queued'].includes(i.scheduleStatus ?? '') && new Date(i.runAt!).getTime() <= Date.now()) && planS.postPreview.every((pp) => it3.some((i) => i.sourceDraftId === pp.draftId && i.accountId === pp.accountId)), JSON.stringify(it3.map((i) => [i.scheduleStatus, i.runAt, i.status])))
+check('… nothing was published while the queue was stopped', posted.length === before5)
 
 // ── 6. Resumed after a restart: the saved assignment is reused, never re-drawn or duplicated ──
 const assignmentBefore = JSON.stringify(it3.map((i) => [i.sourceDraftId, i.accountId]).sort())
@@ -213,6 +218,7 @@ check('resumed run: same posts on the same accounts', JSON.stringify(items(run3.
 check('… no new copies and no second schedule', db.get<{ n: number }>('SELECT COUNT(*) AS n FROM drafts')!.n === draftsBefore && db.get<{ n: number }>("SELECT COUNT(*) AS n FROM scheduled_posts WHERE status <> 'cancelled'")!.n === schedulesBefore)
 await runs.stop(run3.id)
 check('stopping it cancels all 4 waiting posts', items(run3.id).every((i) => i.status === 'skipped'))
+check('… none of them was published', posted.length === before5)
 
 // ── 7. Create Post → Publish… is unchanged: one post from every eligible account ──
 const solo = await save('Create Post publish to all')

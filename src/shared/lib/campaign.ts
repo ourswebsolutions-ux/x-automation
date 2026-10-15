@@ -21,8 +21,6 @@ export interface CampaignChoices {
   /** Every eligible synchronized profile, or only the chosen ones (still only eligible ones take part). */
   profileScope: 'all' | 'selected'
   profileIds: string[]
-  when: 'now' | 'schedule'
-  startAt: string | null
   /** This campaign's random account order (a new one for each new campaign; the preview and Start share it). */
   seed: number
 }
@@ -39,8 +37,6 @@ export const defaultChoices = (): CampaignChoices => ({
   commentIds: [],
   profileScope: 'all',
   profileIds: [],
-  when: 'now',
-  startAt: null,
   seed: newSeed()
 })
 
@@ -98,7 +94,8 @@ export function toConfig(c: CampaignChoices): AutomationConfig {
       commentText: c.action === 'comment' && !savedComments ? c.commentText : '',
       ...(savedComments ? { commentIds: c.commentIds } : {})
     },
-    schedule: { when: c.when, startAt: c.when === 'schedule' ? c.startAt : null, endAt: null, intervalMinutes: 0, postsPerProfile: count, maxPostsPerRun: 500, workingHours: { enabled: false, start: '09:00', end: '18:00' }, days: [0, 1, 2, 3, 4, 5, 6] },
+    // Campaigns run when you press Run campaign: no run date or time (and none can be set).
+    schedule: { when: 'now', startAt: null, endAt: null, intervalMinutes: 0, postsPerProfile: count, maxPostsPerRun: 500, workingHours: { enabled: false, start: '09:00', end: '18:00' }, days: [0, 1, 2, 3, 4, 5, 6] },
     // A failing account never stops the others: its own posts fail (or are held when it is signed out); the run keeps going.
     failure: { generationRetries: 0, onTextFailure: 'skip', onImageFailure: 'skip', onProfileUnavailable: 'skip', stopAfterFailures: 0 }
   }
@@ -110,8 +107,6 @@ export function choicesFrom(config: AutomationConfig): CampaignChoices {
   return {
     ...base,
     name: config.name,
-    draftIds: config.content.source === 'drafts' ? config.content.draftIds : [],
-    when: config.schedule.when,
-    startAt: config.schedule.startAt
+    draftIds: config.content.source === 'drafts' ? config.content.draftIds : []
   }
 }

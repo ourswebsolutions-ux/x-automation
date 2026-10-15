@@ -337,9 +337,10 @@ export class RunService {
       block('Without text generation every post has the same text. Allow repeated content, or turn text generation on.')
     }
 
-    // Times.
-    const start = schedule.when === 'now' ? this.now() : schedule.startAt ? new Date(schedule.startAt) : null
-    if (schedule.when === 'schedule' && (!start || start.getTime() < this.now().getTime() - 60_000)) block('Choose a start time in the future.')
+    // Times: a campaign runs as soon as it starts. A run date or time (older saved setups) is refused
+    // rather than silently scheduled for later.
+    if (schedule.when === 'schedule') block('Campaigns start right away — a run date or time can’t be set. Press Run campaign to start it now.')
+    const start = this.now()
     if (schedule.endAt && start && new Date(schedule.endAt) <= start) block('The end time must be after the start time.')
     if (schedule.days && schedule.days.length === 0) block('Choose at least one posting day.')
     let firstRunAt: string | null = null
@@ -400,8 +401,8 @@ export class RunService {
     if (content.source !== 'drafts' && (content.source === 'generate' || generations > 0)) summary.push(content.generateText ? 'Generate text with AI' : 'Use your own text')
     if (content.generateImages) summary.push(useDrafts ? 'Generate and attach an image per post (drafts without one)' : 'Generate and attach an image per post')
     else if (content.existingAssetId) summary.push('Attach the selected library image')
-    if (actions.repost && engagementTasks) summary.push(schedule.when === 'schedule' ? 'Repost at the chosen time, confirmed on X' : 'Repost now, confirmed on X')
-    if (actions.comment && engagementTasks) summary.push(schedule.when === 'schedule' ? 'Post the comment at the chosen time, confirmed on X' : 'Post the comment now, confirmed on X')
+    if (actions.repost && engagementTasks) summary.push('Repost now, confirmed on X')
+    if (actions.comment && engagementTasks) summary.push('Post the comment now, confirmed on X')
     if (actions.like && engagementTasks) summary.push('Plan like tasks (done by you)')
 
     // Comments saved with the chosen posts go out as replies to each post (one per post, same account).
@@ -480,7 +481,7 @@ export class RunService {
     const now = this.now().toISOString()
     const runId = randomUUID()
     const publishing = config.actions.publish && config.targets.distribution !== 'drafts'
-    const start = config.schedule.when === 'now' ? this.now() : new Date(config.schedule.startAt!)
+    const start = this.now()
     const end = config.schedule.endAt ? new Date(config.schedule.endAt) : null
     this.deps.db.transaction(() => {
       this.deps.db.run(
@@ -1027,8 +1028,8 @@ export class RunService {
   private engagementAssignments(config: AutomationConfig, accounts: string[]): EngagementAssignment[] {
     const links = [...new Map(config.actions.engagementLinks.map((l) => parsePostUrl(l)).filter((l): l is ParsedPostUrl => Boolean(l)).map((l) => [l.postId, l])).values()]
     const kinds = [config.actions.repost && 'repost', config.actions.comment && 'reply', config.actions.like && 'like'].filter(Boolean) as ('repost' | 'reply' | 'like')[]
-    // A campaign's run time becomes the task's due time (now = no due time).
-    const dueAt = config.schedule.when === 'schedule' ? config.schedule.startAt : null
+    // Campaigns run now: their reposts and comments have no due time.
+    const dueAt: string | null = null
     const saved = config.actions.comment && config.actions.commentIds?.length ? this.comments.byIds(config.actions.commentIds) : null
     const out: EngagementAssignment[] = []
     let turn = 0

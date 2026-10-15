@@ -17,17 +17,17 @@ import { RunPanel, RUN_LABEL } from './RunPanel'
 const STORAGE_KEY = 'axora.campaign.choices'
 const load = (): CampaignChoices => {
   try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') as Partial<CampaignChoices> | null
-    return stored ? { ...defaultChoices(), ...stored } : defaultChoices()
+    // Older versions also stored a run time ("when"/"startAt"); campaigns no longer have one.
+    const { when: _when, startAt: _startAt, ...stored } = (JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') ?? {}) as Partial<CampaignChoices> & { when?: unknown; startAt?: unknown }
+    return { ...defaultChoices(), ...stored }
   } catch {
     return defaultChoices()
   }
 }
 
 /**
- * Campaigns: Post, Repost or Comment, posts, run time — then Start; every eligible synchronized
- * profile takes part (no profile selection). Runs on the
- * existing automation engine and publishing queue (account check, one post at a time per profile,
+ * Campaigns: Post, Repost or Comment, profiles (all or chosen), posts — then Run campaign starts it at
+ * once (no run date or time). Runs on the existing automation engine and publishing queue (account check, one post at a time per profile,
  * posts with an unconfirmed outcome wait for your review).
  */
 export function CampaignsPage() {
@@ -125,7 +125,7 @@ export function CampaignsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={NAV_ITEMS.campaigns.label} description="Post your saved posts (with their comments) from every synchronized profile, repost posts, or comment on a post — now or at a date and time." />
+      <PageHeader title={NAV_ITEMS.campaigns.label} description="Post your saved posts (with their comments), repost posts, or comment on posts from your synchronized profiles — Run campaign starts it right away." />
 
       {viewRun && <RunPanel runId={viewRun} />}
 
@@ -141,7 +141,6 @@ export function CampaignsPage() {
               {summary}
               {plan.profiles.selected > plan.profiles.eligible ? ` · ${plan.profiles.selected - plan.profiles.eligible} of your synchronized profiles can’t be used right now` : ''}
               {plan.comments ? ` · ${pluralize(plan.comments, 'comment')} after the posts` : ''}
-              {plan.firstRunAt ? ` · from ${formatDateTime(plan.firstRunAt)}` : ''}
             </p>
           )}
           {blocking.map((p) => (
@@ -157,9 +156,9 @@ export function CampaignsPage() {
             </p>
           ))}
           <Button variant="primary" icon={Play} className="h-10" disabled={!canStart} loading={starting} onClick={start}>
-            {choices.when === 'now' ? 'Run campaign' : 'Schedule campaign'}
+            Run campaign
           </Button>
-          {choices.when === 'now' && <p className="text-xs text-fg-subtle">Starts right away — no date or time needed. Progress, results and errors show above.</p>}
+          <p className="text-xs text-fg-subtle">Starts right away — no date or time needed. Progress, results and errors show above.</p>
           {busy && <p className="text-xs text-fg-subtle">A campaign is already running. Wait for it to finish or stop it first.</p>}
         </aside>
       </div>

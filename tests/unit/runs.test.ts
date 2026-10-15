@@ -223,9 +223,9 @@ await runs.stop(run10.id)
 
 // stop: waiting posts are cancelled and return to drafts
 await queue.stop()
-const run11 = await runs.start({ ...base(), name: 'Stop me', schedule: { ...base().schedule, when: 'schedule', startAt: new Date(Date.now() + 3_600_000).toISOString(), intervalMinutes: 30 }, targets: { ...base().targets, scope: 'selected', profileIds: ['aaaaaaaa-0000-4000-8000-000000000002'] } })
+const run11 = await runs.start({ ...base(), name: 'Stop me', schedule: { ...base().schedule, intervalMinutes: 30 }, targets: { ...base().targets, scope: 'selected', profileIds: ['aaaaaaaa-0000-4000-8000-000000000002'] } })
 await waitFor(() => runs.details(run11.id).run.status === 'publishing')
-check('scheduled run: posts scheduled for later', itemsOf(run11.id).every((i) => i.scheduleStatus === 'pending') && new Date(itemsOf(run11.id)[1]!.runAt!).getTime() - new Date(itemsOf(run11.id)[0]!.runAt!).getTime() === 30 * 60_000)
+check('run with spacing: the first post due now, the next one spaced after it (no run time chosen)', itemsOf(run11.id).every((i) => ['pending', 'queued'].includes(i.scheduleStatus ?? '')) && new Date(itemsOf(run11.id)[0]!.runAt!).getTime() <= Date.now() && new Date(itemsOf(run11.id)[1]!.runAt!).getTime() - new Date(itemsOf(run11.id)[0]!.runAt!).getTime() === 30 * 60_000)
 const stopped = await runs.stop(run11.id)
 check('stop: waiting posts cancelled and returned to drafts', stopped.status === 'stopped' && itemsOf(run11.id).every((i) => i.status === 'skipped') && itemsOf(run11.id).every((i) => db.get<{ status: string }>('SELECT status FROM drafts WHERE id = :id', { id: i.draftId })?.status === 'ready'))
 
@@ -313,17 +313,18 @@ const rsItems = itemsOf(rs.id)
 check('… first profile posts the draft, the other an independent copy with the same text', rsItems[0]!.draftId === shared.id && rsItems[1]!.draftId !== shared.id && rsItems[1]!.text === shared.body && rsItems.every((i) => i.scheduleStatus === 'completed'))
 
 // Repost campaign (the simplified campaign form): no posts needed, one repost task per post link,
-// one of your accounts each; the run time becomes the task's due time.
+// one of your accounts each, due now (campaigns have no run time).
 {
   db.run("UPDATE automation_runs SET status = 'stopped' WHERE status IN ('generating', 'awaiting-approval', 'paused', 'publishing')")
-  const runAt = new Date(Date.now() + 2 * 3_600_000).toISOString()
+  const startedAt = new Date().toISOString()
   const repostCfg: AutomationConfig = {
     ...base(),
     name: 'Repost campaign',
     content: { ...base().content, source: 'drafts', draftIds: [], generateText: false, generateImages: false },
     actions: { ...base().actions, publish: false, saveDrafts: false, repost: true, engagementLinks: ['https://x.com/someone_else/status/1888000000000000001'] },
-    schedule: { ...base().schedule, when: 'schedule', startAt: runAt }
+    schedule: { ...base().schedule, when: 'now', startAt: null }
   }
+  check('repost campaign with a run date or time: refused (never queued for later)', !runs.plan({ ...repostCfg, schedule: { ...repostCfg.schedule, when: 'schedule', startAt: new Date(Date.now() + 2 * 3_600_000).toISOString() } }).ok)
   const rp = runs.plan(repostCfg)
   check('repost campaign: valid without selecting posts; one repost planned', rp.ok && rp.posts === 0 && rp.engagementTasks === 1, JSON.stringify(rp.problems))
   const pubBefore = published.length
@@ -331,7 +332,7 @@ check('… first profile posts the draft, the other an independent copy with the
   const ritems = itemsOf(rr.id)
   const task = db.get<{ id: string; kind: string; due_at: string | null; status: string }>('SELECT id, kind, due_at, status FROM engagement_tasks WHERE id = (SELECT engagement_task_id FROM run_items WHERE run_id = :id)', { id: rr.id })
   const queued = db.get<{ kind: string; status: string; run_after: string; account_id: string }>('SELECT kind, status, run_after, account_id FROM tasks WHERE idempotency_key = :key', { key: `engage:${task?.id}` })
-  check('… one repost for one account, queued for exactly the run time (not now), nothing published', ritems.length === 1 && ritems[0]!.kind === 'engagement' && task?.kind === 'repost' && task.due_at === runAt && queued?.kind === 'repost' && queued.status === 'queued' && queued.run_after === runAt && published.length === pubBefore, JSON.stringify({ task, queued }))
+  check('… one repost for one account, queued to run now (no due time, nothing for later), nothing published', ritems.length === 1 && ritems[0]!.kind === 'engagement' && task?.kind === 'repost' && task.due_at === null && queued?.kind === 'repost' && queued.status === 'queued' && queued.run_after >= startedAt && queued.run_after <= new Date().toISOString() && published.length === pubBefore, JSON.stringify({ task, queued }))
   check('… shown as Scheduled, and the campaign stays running until X confirms the repost (no false "Completed")', ritems[0]!.status === 'scheduled' && ritems[0]!.taskStatus === 'queued' && runs.details(rr.id).run.status === 'publishing' && runs.details(rr.id).run.counts.scheduled === 1, runs.details(rr.id).run.status)
   // Comment campaign: your comment text, one of your accounts per post (never the same comment
   // from several accounts), and the campaign result follows the task's real status.
@@ -349,7 +350,7 @@ check('… first profile posts the draft, the other an independent copy with the
   const cr = await runs.start(commentCfg)
   const ctasks = db.all<{ id: string; link_id: string; account_id: string; kind: string; reply_text: string; due_at: string | null }>('SELECT id, link_id, account_id, kind, reply_text, due_at FROM engagement_tasks WHERE id IN (SELECT engagement_task_id FROM run_items WHERE run_id = :id)', { id: cr.id })
   const cq = db.get<{ kind: string; run_after: string; payload: string }>('SELECT kind, run_after, payload FROM tasks WHERE idempotency_key = :key', { key: `engage:${ctasks[0]?.id}` })
-  check('… the comment is queued as a reply to that post at exactly the run time, with your text', ctasks.length === 1 && ctasks[0]!.kind === 'reply' && cq?.kind === 'reply' && cq.run_after === runAt && JSON.parse(cq.payload).text === 'Great write-up — the section on caching helped me.' && JSON.parse(cq.payload).parentPostId === '1888000000000000011', JSON.stringify({ ctasks, cq }))
+  check('… the comment is queued as a reply to that post, to run now, with your text', ctasks.length === 1 && ctasks[0]!.kind === 'reply' && ctasks[0]!.due_at === null && cq?.kind === 'reply' && cq.run_after >= startedAt && cq.run_after <= new Date().toISOString() && JSON.parse(cq.payload).text === 'Great write-up — the section on caching helped me.' && JSON.parse(cq.payload).parentPostId === '1888000000000000011', JSON.stringify({ ctasks, cq }))
   const citems = itemsOf(cr.id)
   check('… each result records profile/account, target post, action', citems.every((i) => i.kind === 'engagement' && i.accountId && i.text?.startsWith('Comment on https://x.com/') && i.engagementStatus === 'open'))
   const firstTask = db.get<{ id: string }>('SELECT engagement_task_id AS id FROM run_items WHERE run_id = :id ORDER BY position LIMIT 1', { id: cr.id })!
