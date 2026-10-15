@@ -13,6 +13,7 @@ import { m012AutomationSchedules } from './012_automation_schedules'
 import { m013AutoLinkAndComments } from './013_auto_link_and_comments'
 import { m014CampaignPostPerAccount } from './014_campaign_post_per_account'
 import { m015RepostTasks } from './015_repost_tasks'
+import { m016BulkContent } from './016_bulk_content'
 
 export interface Migration {
   version: number
@@ -27,7 +28,7 @@ export interface Migration {
 }
 
 /** Append-only. Never edit a shipped migration — add a new one. */
-export const MIGRATIONS: Migration[] = [m001Initial, m002IxBrowserSync, m003AccountManagement, m004AiProviders, m005Generator, m006Images, m007Proxies, m008Publishing, m009Engagement, m010AutomationUsage, m011AutomationRuns, m012AutomationSchedules, m013AutoLinkAndComments, m014CampaignPostPerAccount, m015RepostTasks]
+export const MIGRATIONS: Migration[] = [m001Initial, m002IxBrowserSync, m003AccountManagement, m004AiProviders, m005Generator, m006Images, m007Proxies, m008Publishing, m009Engagement, m010AutomationUsage, m011AutomationRuns, m012AutomationSchedules, m013AutoLinkAndComments, m014CampaignPostPerAccount, m015RepostTasks, m016BulkContent]
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0
 

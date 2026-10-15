@@ -2,12 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { attachmentProblem, attachmentSetProblem, X_MEDIA_LIMITS } from '@shared/config/mediaLimits'
 import { MAX_HASHTAGS, normalizeHashtag } from '@shared/config/postLimits'
 import { commentProblems, NO_COMMENT } from '@shared/lib/postComment'
-import type { AttachmentInput, Draft, DraftInput, Id, PostComment } from '@shared/types/domain'
+import type { AttachmentInput, BulkSaveInput, BulkSaveResult, Draft, DraftInput, Id, PostComment } from '@shared/types/domain'
 import type { AssetRepository } from '../database/sqlite/assetRepository'
 import type { SqliteDatabase } from '../database/driver'
 import type { WorkspaceRepositories } from '../database/repositories'
 import { NotFoundError, ValidationError } from '../errors'
 import type { ScopedLogger } from '../logging/logger'
+import { bulkSave } from './bulk'
 
 export const MAX_DRAFT_CHARS = 25_000
 
@@ -86,6 +87,27 @@ export class DraftService {
     await this.recordActivity(existing ? 'Draft updated' : 'Draft created', draft)
     this.log.info(`${existing ? 'Updated' : 'Created'} draft ${draft.id.slice(0, 8)}`, { chars: draft.body.length, origin: draft.origin })
     return (await this.repositories.drafts.get(draft.id)) ?? draft
+  }
+
+  /**
+   * Bulk posts: every valid item becomes its own draft, in one transaction (see bulk.ts — repeats and
+   * texts already saved are skipped, a repeated request saves nothing new). Hashtags, mentions and
+   * links stay in the text as written. The first item is the newest, so the list shows the pasted order.
+   */
+  async saveMany(input: BulkSaveInput): Promise<BulkSaveResult> {
+    const existing = this.db.all<{ body: string }>('SELECT body FROM drafts').map((r) => r.body)
+    const base = Date.now()
+    const result = bulkSave(this.db, 'post', input, existing, (body, index) => {
+      const at = new Date(base - index).toISOString()
+      const draft: Draft = { id: randomUUID(), body, hashtags: [], accountId: null, status: 'draft', origin: 'manual', sourceGenerationId: null, media: [], comment: NO_COMMENT, createdAt: at, updatedAt: at }
+      void this.repositories.drafts.upsert(draft)
+      return draft.id
+    })
+    if (!result.repeated && result.saved.length) {
+      await this.repositories.activity.append({ id: randomUUID(), level: 'info', message: 'Drafts created in bulk', subject: `${result.saved.length} ${result.saved.length === 1 ? 'post' : 'posts'}`, at: new Date().toISOString() })
+      this.log.info(`Bulk save: ${result.saved.length} drafts created, ${result.skipped.length} skipped`)
+    }
+    return result
   }
 
   /** A new, independent copy (status reset to draft). Attachments are not copied. */

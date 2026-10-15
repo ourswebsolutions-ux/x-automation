@@ -1,4 +1,4 @@
-import { Bot, Copy, FileText, HardDrive, Image as ImageIcon, Images, PenLine, Sparkles, SquarePen, Trash2 } from 'lucide-react'
+import { Bot, Copy, FileText, HardDrive, Image as ImageIcon, Images, ListPlus, MessagesSquare, PenLine, Sparkles, SquarePen, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useBlocker, useSearchParams } from 'react-router'
 import { composePost } from '@shared/config/postLimits'
@@ -33,6 +33,9 @@ import { useNotifications } from '@/state/notifications'
 import { NAV_ITEMS } from '@/app/navigation'
 import { DraftEditor, type EditorValue } from '../posts/DraftEditor'
 import { AiComposer } from './AiComposer'
+import { BulkComposer } from './BulkComposer'
+import { SavedComments } from './SavedComments'
+import { useComments } from '@/data/comments'
 import { AssetLibraryDialog } from '@/components/feature/AssetLibraryDialog'
 
 type StatusFilter = 'all' | DraftStatus
@@ -47,12 +50,14 @@ const toInput = ({ media, ...value }: EditorValue, accountId: string | null = nu
 
 const STATUS_LABEL: Record<DraftStatus, string> = { draft: 'Draft', ready: 'Ready', scheduled: 'Scheduled', published: 'Published', failed: 'Failed' }
 
-type Mode = 'ai' | 'manual'
+type Mode = 'ai' | 'manual' | 'bulk' | 'comments'
+const MODES: Mode[] = ['ai', 'manual', 'bulk', 'comments']
 
 /**
  * Create Post: write a post yourself (Manual) or with your AI provider (AI), add images, preview
  * and edit it, then publish it now to all or selected accounts — or keep it for a campaign.
- * Saved posts are listed on the left (drafts on this device).
+ * Bulk posts / Bulk comments: paste a list (e.g. written in ChatGPT, used separately) and save every
+ * item at once. Saved posts are listed on the left (drafts on this device).
  */
 export function CreatePostPage() {
   const toast = useToast()
@@ -72,7 +77,8 @@ export function CreatePostPage() {
   const [libraryOpen, setLibraryOpen] = useState(false)
 
   const list = drafts.data ?? []
-  const mode: Mode = params.get('mode') === 'ai' ? 'ai' : 'manual'
+  const comments = useComments()
+  const mode: Mode = MODES.find((m) => m !== 'manual' && m === params.get('mode')) ?? 'manual'
   const selectedId = params.get('draft')
   const selected = selectedId ? (list.find((d) => d.id === selectedId) ?? null) : null
   // Manual without a selected post = a new post in the editor; AI without one = the AI composer.
@@ -98,7 +104,7 @@ export function CreatePostPage() {
     else action()
   }
   const open = (draft: Draft | null) => guard(() => setParams(draft ? withMode({ draft: draft.id }) : withMode({})))
-  const setMode = (next: Mode) => guard(() => setParams(next === 'ai' ? { mode: 'ai' } : {}))
+  const setMode = (next: Mode) => guard(() => setParams(next === 'manual' ? {} : { mode: next }))
 
   const counts = useMemo(() => {
     const c: Partial<Record<DraftStatus, number>> = {}
@@ -263,11 +269,19 @@ export function CreatePostPage() {
         onChange={setMode}
         options={[
           { value: 'ai', label: 'AI Post', icon: Sparkles },
-          { value: 'manual', label: 'Manual Post', icon: PenLine }
+          { value: 'manual', label: 'Manual Post', icon: PenLine },
+          { value: 'bulk', label: 'Bulk posts', icon: ListPlus },
+          { value: 'comments', label: 'Bulk comments', icon: MessagesSquare }
         ]}
         className="self-start"
       />
 
+      {mode === 'comments' ? (
+        <div className="grid grid-cols-1 gap-4 @5xl:grid-cols-[minmax(0,1fr)_380px]">
+          <BulkComposer kind="comment" onSaved={() => comments.reload()} />
+          <SavedComments comments={comments} />
+        </div>
+      ) : (
       <div className="grid grid-cols-1 gap-4 @5xl:grid-cols-[340px_minmax(0,1fr)]">
         <Panel
           title="Saved posts"
@@ -358,7 +372,9 @@ export function CreatePostPage() {
           )}
         </Panel>
 
-        {!editorOpen ? (
+        {!editorOpen && mode === 'bulk' ? (
+          <BulkComposer kind="post" onSaved={() => drafts.reload()} />
+        ) : !editorOpen ? (
           <AiComposer
             onOpenDraft={(id) => {
               drafts.reload()
@@ -378,6 +394,7 @@ export function CreatePostPage() {
           />
         )}
       </div>
+      )}
 
       <AssetLibraryDialog open={libraryOpen} onClose={() => setLibraryOpen(false)} />
       <ConfirmDialog

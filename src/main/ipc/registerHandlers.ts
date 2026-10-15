@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, shell, type IpcMainInvokeEvent } from 'elec
 import { dirname } from 'node:path'
 import { z } from 'zod'
 import { TEST_PROMPT_MAX_CHARS } from '@shared/config/aiAdapters'
+import { BULK_MAX_ITEMS } from '@shared/lib/bulkParse'
 import { ASSIST_TOOLS, TONES } from '@shared/types/generator'
 import { IMAGE_STYLES } from '@shared/types/images'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
@@ -151,6 +152,24 @@ export function registerIpcHandlers(services: AppServices, getWindow: () => Brow
   )
   handle(IpcChannel.DraftsDuplicate, id, (draftId) => services.drafts.duplicate(draftId))
   handle(IpcChannel.DraftsRemove, id, (draftId) => services.drafts.remove(draftId))
+  // Bulk posts and comments (pasted lists): sizes are capped here; every item is checked again in the service.
+  const bulkInput = z
+    .object({
+      requestId: id,
+      items: z.array(z.object({ text: z.string().max(25_000, 'An item can be up to 25,000 characters.') }).strict()).min(1, 'Nothing to save.').max(BULK_MAX_ITEMS, `Up to ${BULK_MAX_ITEMS} items can be saved at once.`),
+      lengthProfile: z.enum(['standard', 'premium']),
+      targetUrl: z.string().max(500).nullable().optional()
+    })
+    .strict()
+  handle(IpcChannel.DraftsSaveMany, bulkInput, (input) => services.drafts.saveMany(input))
+  handle(IpcChannel.CommentsList, noPayload, () => services.comments.list())
+  handle(IpcChannel.CommentsSaveMany, bulkInput, (input) => services.comments.saveMany(input))
+  handle(
+    IpcChannel.CommentsUpdate,
+    z.object({ id, patch: z.object({ body: z.string().max(4000).optional(), targetUrl: z.string().max(500).nullable().optional() }).strict() }).strict(),
+    ({ id: commentId, patch }) => services.comments.update(commentId, patch)
+  )
+  handle(IpcChannel.CommentsRemove, id, (commentId) => services.comments.remove(commentId))
 
   // Generator & AI editing tools — validated here and again in GeneratorService.
   const tone = z.enum(TONES)

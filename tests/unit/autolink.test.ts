@@ -52,7 +52,7 @@ const errOf = async (p: Promise<unknown> | (() => unknown)) => {
 const file = process.argv[2]!
 for (const s of ['', '-wal', '-shm']) rmSync(file + s, { force: true })
 const db = new SqliteDatabase(file).open()
-check('migrate → v15', migrate(db, log as never) === 15)
+check('migrate → v16', migrate(db, log as never) === 16)
 check('v15 columns exist', ['comment_text', 'comment_enabled'].every((c) => db.all<{ name: string }>("PRAGMA table_info('drafts')").some((r) => r.name === c)) && db.all<{ name: string }>("PRAGMA table_info('browser_profiles')").some((r) => r.name === 'link_excluded_at'))
 
 const mock = await startMock()

@@ -54,7 +54,7 @@ const waitFor = async (fn: () => boolean, ms = 4000) => {
 const file = process.argv[2]!
 rmSync(file, { force: true })
 const db = new SqliteDatabase(file).open()
-check('migrate → v15', migrate(db, log as never) === 15)
+check('migrate → v16', migrate(db, log as never) === 16)
 const at = new Date().toISOString()
 db.exec(`INSERT INTO browser_profiles (id, external_id, name, synced_at, first_seen_at, availability, run_state) VALUES
   ('bp1','101','Alpha','${at}','${at}','available','closed'),('bp2','102','Beta','${at}','${at}','available','closed'),('bp3','103','Gamma','${at}','${at}','available','running')`)

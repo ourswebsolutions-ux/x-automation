@@ -63,6 +63,38 @@ export interface Draft {
   updatedAt: Timestamp
 }
 
+/** A saved comment for campaigns (bulk comments), posted as a reply to its target post. */
+export interface CommentDraft {
+  id: Id
+  body: string
+  /** The post it is meant for (https://x.com/<handle>/status/<id>); null until a campaign pairs it with a selected post. */
+  targetUrl: string | null
+  /** When a campaign planned it (a comment is used once; it can still be chosen again on purpose). */
+  usedAt: Timestamp | null
+  createdAt: Timestamp
+  updatedAt: Timestamp
+}
+
+/** One bulk save (posts → drafts, or comments → comment drafts). */
+export interface BulkSaveInput {
+  /** Made once per click by the renderer: the same id again returns the first result, saving nothing twice. */
+  requestId: Id
+  items: { text: string }[]
+  lengthProfile: 'standard' | 'premium'
+  /** Comments only: the post every comment in this save is meant for (optional). */
+  targetUrl?: string | null
+}
+
+export interface BulkSaveResult {
+  requestId: Id
+  /** True when this request was already saved earlier (nothing new was saved). */
+  repeated: boolean
+  /** Saved items by their position in the request. */
+  saved: { index: number; id: Id }[]
+  /** Items not saved, by position, with the reason (empty, too long, repeated, already saved). */
+  skipped: { index: number; reason: string }[]
+}
+
 /** Fields the renderer may submit when creating or editing a draft. */
 export interface DraftInput {
   id?: Id

@@ -69,6 +69,11 @@ export interface ActionSettings {
   engagementLinks: string[]
   /** Your comment text for comment tasks (copied by you; never posted automatically). */
   commentText: string
+  /**
+   * Saved comments (bulk comments) for the comment action, in order. Each goes on one post — its own
+   * target, or the next selected post — and each post gets one comment. When set, commentText is not used.
+   */
+  commentIds?: Id[]
 }
 
 export interface ScheduleSettings {
@@ -144,6 +149,9 @@ export interface RunPlan {
     accountLabel: string | null
     runAt: Timestamp | null
     skipped: string | null
+    /** Comments: the text posted on this post, and the saved comment it comes from (if any). */
+    text?: string | null
+    commentId?: Id | null
   }[]
   firstRunAt: Timestamp | null
   lastRunAt: Timestamp | null

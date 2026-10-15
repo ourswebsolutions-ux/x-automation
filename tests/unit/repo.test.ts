@@ -14,8 +14,8 @@ const path = process.argv[2]!
 rmSync(path, { force: true }); rmSync(`${path}-wal`, { force: true }); rmSync(`${path}-shm`, { force: true })
 
 const db = new SqliteDatabase(path).open()
-check('migrate fresh → v15', migrate(db, log) === 15)
-check('migrate is idempotent', migrate(db, log) === 15 && db.all('SELECT * FROM schema_migrations').length === 15)
+check('migrate fresh → v16', migrate(db, log) === 16)
+check('migrate is idempotent', migrate(db, log) === 16 && db.all('SELECT * FROM schema_migrations').length === 16)
 const r = createSqliteRepositories(db)
 const at = new Date().toISOString()
 

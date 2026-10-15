@@ -422,7 +422,8 @@ async function resumeRelease({ repo, version, tag, localTag, remoteTag, release,
   })()
   if (tagVersion !== version) fail(`${tag} points to a commit whose package.json version is ${tagVersion}.`, 'That tag was not made by this release process. Choose a new version.')
   // Releases need the pipeline (update metadata, artifact names) that this command validates.
-  if (!tryGit('cat-file', '-e', `${sha}:scripts/release-assets.mjs`)) {
+  // `git cat-file -e` prints nothing on success, so its exit status decides (not its output).
+  if (run('git', ['cat-file', '-e', `${sha}:scripts/release-assets.mjs`]).status !== 0) {
     fail(
       `${tag} was tagged from code that predates the current release pipeline (no auto-update metadata, different installer names), so it cannot be rebuilt into a complete release without changing what that tag means.`,
       `Leave ${tag} as it is and release the next version: npm run release -- ${bumpPatch(version)}`

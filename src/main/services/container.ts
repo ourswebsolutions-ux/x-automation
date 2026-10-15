@@ -24,6 +24,7 @@ import { ImageGenerationRepository } from './database/sqlite/imageGenerationRepo
 import { GenerationRepository } from './database/sqlite/generationRepository'
 import { ProfileRepository } from './database/sqlite/profileRepository'
 import { DraftService } from './drafts/draftService'
+import { CommentDraftService } from './drafts/commentDraftService'
 import type { ImageGenerationProvider } from './integrations/image/types'
 import { IntegrationsService } from './integrations/integrationsService'
 import { IxBrowserService } from './integrations/ixbrowser/ixBrowserService'
@@ -107,6 +108,8 @@ export interface AppServices {
   integrations: IntegrationsService
   workspace: WorkspaceService
   drafts: DraftService
+  /** Saved comments for campaigns (bulk comments). */
+  comments: CommentDraftService
   profiles: ProfileRepository
   /** Notified whenever provider configs, credentials or IX Browser state change. */
   onIntegrationsChanged: (listener: () => void) => () => void
@@ -308,6 +311,7 @@ export async function createServices(): Promise<AppServices> {
     log: logger.scope('generator')
   })
   const drafts = new DraftService(repositories, database.db, assetRepo, logger.scope('drafts'), assetExists)
+  const comments = new CommentDraftService(database.db, logger.scope('comments'))
   const engagement = new EngagementService({
     repo: new EngagementRepository(database.db),
     links: postLinks,
@@ -324,6 +328,7 @@ export async function createServices(): Promise<AppServices> {
     generator,
     images,
     drafts,
+    comments,
     assets: assetRepo,
     accounts: accountRepo,
     accountService: accounts,
@@ -446,6 +451,7 @@ export async function createServices(): Promise<AppServices> {
     integrations: new IntegrationsService({ providers, vault, database, ixBrowser, ai, preferences }),
     workspace: new WorkspaceService(repositories, profiles, queue, schedules),
     drafts,
+    comments,
     onIntegrationsChanged: (listener) => {
       listeners.add(listener)
       return () => listeners.delete(listener)

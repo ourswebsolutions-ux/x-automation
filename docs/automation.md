@@ -43,8 +43,8 @@ The **Posting** column shows each profile's status:
 
 ## Create Post
 
-Create Post is one page with an **AI Post / Manual Post** toggle. Saved posts are listed on the left;
-together they are the content you can publish now or use in campaigns.
+Create Post is one page with an **AI Post / Manual Post / Bulk posts / Bulk comments** toggle. Saved
+posts are listed on the left; together they are the content you can publish now or use in campaigns.
 
 | | |
 | --- | --- |
@@ -81,12 +81,58 @@ together they are the content you can publish now or use in campaigns.
 
 **Use in a campaign** opens Campaigns with the post already selected.
 
+### Bulk posts and bulk comments (pasted lists)
+
+For content written elsewhere, for example by asking ChatGPT in your browser for "300 different X
+posts about …". X Auto never calls ChatGPT or any other AI service for this; there is no key or
+setting for it. **Copy a prompt for ChatGPT** puts a suggested request on the clipboard.
+
+1. Paste the whole answer into **Paste your posts** (or **Paste your comments**).
+2. X Auto splits it into items and shows **N posts detected**, with the format it recognised:
+   - **Numbered list:** `1.`, `2)`, `**3.**`, `Post 4:`, `Comment #5 -`. An item runs until the next
+     number, so it can span several lines and paragraphs. Numbers must count up by one (from any
+     start, such as 101 for a second batch). A `3.` inside a post that isn't the next number stays
+     part of the post, as do times (`10:30`), decimals (`1.5x`) and years.
+   - **Separated by blank lines:** each block is one item, with its line breaks.
+   - **One per line:** every line is one item.
+3. ChatGPT's introduction ("Sure! Here are 300 posts:") and closing note ("Let me know if …") are
+   left out, as are headings and `---` lines. They are listed under *Left out*, so nothing disappears
+   silently. A last item with an extra paragraph is kept and pointed out for you to check.
+4. Only the list number (and `- ` bullets, when the whole list uses them) is removed. Hashtags,
+   @mentions, links, emojis, punctuation and numbers in the text are kept as written.
+5. **Review:** edit any item, or remove it (×). Each item shows its X length (emoji count 2, links
+   count 23).
+   - Empty items and items over the chosen limit (**Up to 280**, or **Longer posts** for X Premium) are
+     marked and are not saved. Text is never cut.
+   - Repeats (same words, ignoring spacing and case) are saved once.
+   - More than **300** in one save is refused, and **Save** is disabled until you remove the extras.
+6. **Save All as Drafts** / **Save All as Comment Drafts** saves every valid item in one click.
+   - It runs as one database transaction. If the save fails, nothing is saved and your pasted text
+     stays.
+   - The click carries a request id for exactly this list. A double click, or a retry after a lost
+     reply, returns the first result and never saves the items twice.
+   - Texts that are already saved are skipped as *Already saved*.
+   - The result says how many were saved, for example *300 drafts saved successfully*. Any item that
+     wasn't saved is listed by number with its reason; the ones you can fix stay in the list.
+
+**Saved posts** from a bulk save are ordinary drafts: they appear in the list on the left in the
+pasted order, and in the Campaigns post picker (**Select all**).
+
+**Saved comments** (Bulk comments) are listed next to the paste box. Each one can be edited, given a
+**target post** (an x.com post link), or deleted, and there is a **Select all** for deleting.
+
+- A target can be set for a whole paste, or later per comment. Without one, the comment waits until a
+  campaign pairs it with a post you select.
+- A target is never made up.
+- A comment that a campaign has used is marked *Used*.
+
 A post that is already scheduled, published or failed shows its status strip in the editor, with
 actions such as **Change time**, **Publish now**, **Cancel schedule** or **Edit again**.
 
 ## Campaigns
 
-The campaign form has three choices and one button. Profiles are never chosen.
+The campaign form has four choices and one button: **Run campaign** (or **Schedule campaign** for a
+date and time).
 
 1. **Action:**
    - **Post** publishes your saved posts. A post that carries a comment is followed by that comment,
@@ -95,17 +141,25 @@ The campaign form has three choices and one button. Profiles are never chosen.
      chosen account's profile (one account per post; accounts are drawn in the campaign's random
      order). It counts only once the post shows **Undo repost** on X (reloaded if
      needed). A post already reposted from that account counts as done without clicking again.
-   - **Comment**: X Auto posts your comment as a reply to the chosen post at the run time, through
-     the same composer and checks as posts, and counts it only once X confirms it.
+   - **Comment**: X Auto posts comments as replies at the run time, through the same composer and
+     checks as posts, and counts each one only once X confirms it.
+     - **Saved comments** (Create Post → Bulk comments): choose them, or **Select all** (the unused
+       ones shown). A comment with its own target goes on that post. The others take the selected
+       posts in order.
+     - **One comment per post:** a comment with no post left, and a post with no comment left, are
+       shown as skipped with the reason.
+     - Without saved comments, you can still write one comment, which goes on one post.
    - **Rules for both** (X's automation rules): one of your accounts per post (never several of
      your accounts on one post), and never a post from one of your accounts amplified by your
      others. One post per comment, because the same comment on several posts is repetitive
      automated replying. The daily guideline per account (Settings → Automation) applies.
      Likes stay tasks you do yourself.
-2. **Profiles** (information only): *N of M synchronized profiles take part*, plus how many are
-   unavailable or disabled, with **View profiles** and **Sync profiles**.
-   - Which profiles take part is decided by the main process when you press Start.
-   - With none synchronized, the form says so and Start is blocked.
+2. **Profiles:** *N of M synchronized profiles take part*, plus how many are unavailable or disabled,
+   with **View profiles** and **Sync profiles**.
+   - **All synchronized profiles** (the default), or **Choose profiles**, with a **Select all**.
+   - Either way, only eligible profiles take part (an enabled account on a profile IX Browser
+     reports), checked by the main process when the campaign starts.
+   - With none synchronized, or none chosen, the form says so and the button is blocked.
 3. **Posts:**
    - For Post, choose saved posts (AI or manual). **Each selected post goes out once, from one
      randomly chosen eligible profile**: 10 posts on 10 profiles = 10 posts, one per profile; 5 posts
@@ -118,12 +172,21 @@ The campaign form has three choices and one button. Profiles are never chosen.
      previewed assignment, and a retry or restart keeps it.
    - **Create Post → Publish…** is separate and unchanged: it publishes one post from every eligible
      profile.
-   - For Repost or Comment, choose posts from Post Links. For Comment, also write the comment.
+   - For Repost or Comment, choose posts from Post Links (**Select all** works here too). For
+     Comment, also choose saved comments, or write one.
+   - Up to 300 posts or post links per campaign.
 4. **Run time:** **Now**, or **at a date and time**, including tomorrow or any later date, in this
    computer's time zone. The time is stored in UTC. For reposts and comments it becomes the task's due
    time.
 
-**Start campaign** starts it in one click. Blocking problems are shown above the button, for example:
+**Run campaign** starts it at once, with no date or time to enter for each post, comment or repost.
+
+- Nothing is scheduled item by item. Posts from one account are spaced by the queue (Settings →
+  Automation), and X's limits and the account checks still apply.
+- A second click while it starts is ignored.
+- The same campaign sent again while it is still running is refused.
+
+Blocking problems are shown above the button, for example:
 
 - no posts;
 - a post that is already scheduled or published;
@@ -195,6 +258,16 @@ Nothing existing was removed or rewritten.
 | `/scheduler` | Campaigns, at Scheduled posts |
 | `/queue` | Campaigns, at the Posting queue |
 | `/accounts` | Synchronized Profiles (profiles first; `?view=accounts` for the X accounts tab) |
+
+**Bulk posts and comments:**
+
+- The paste is parsed in `src/shared/lib/bulkParse.ts`, and checked again by the main process.
+- Posts become ordinary `drafts` rows. Comments go in `comment_drafts` (body, optional target link,
+  position, used time). Both tables come from migration `016`, which only adds tables.
+- Each bulk save writes one `bulk_saves` row (its request id and result) in the same transaction as
+  the items. A repeated request id returns that result.
+- Saved comments in a campaign are `reply` queue tasks like any campaign comment (idempotency key
+  `engage:<task id>`). The preview and the start use the same pairing (`pairComments`).
 
 ## Verification status
 

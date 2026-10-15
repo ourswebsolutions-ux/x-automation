@@ -16,7 +16,7 @@ import type {
   TestPromptInput,
   TestPromptOutcome
 } from '../types/ai'
-import type { Draft, DraftInput, Id, WorkspaceSummary } from '../types/domain'
+import type { BulkSaveInput, BulkSaveResult, CommentDraft, Draft, DraftInput, Id, WorkspaceSummary } from '../types/domain'
 import type { AppNotice } from '../types/notifications'
 import type { UpdateStatus } from '../types/updates'
 import type { AutomationConfig, AutomationMode, AutomationRun, AutomationSchedule, AutomationScheduleInput, PromptPreset, RunDetails, RunItem, RunPlan } from '../types/automation'
@@ -407,6 +407,15 @@ export interface RelayApi {
     list(): Promise<Draft[]>
     save(input: DraftInput): Promise<Draft>
     duplicate(id: Id): Promise<Draft>
+    remove(id: Id): Promise<void>
+    /** Bulk posts: every valid item saved as its own draft in one transaction; the same requestId twice saves once. */
+    saveMany(input: BulkSaveInput): Promise<BulkSaveResult>
+  }
+  /** Saved comments for campaigns (bulk comments). */
+  comments: {
+    list(): Promise<CommentDraft[]>
+    saveMany(input: BulkSaveInput): Promise<BulkSaveResult>
+    update(id: Id, patch: { body?: string; targetUrl?: string | null }): Promise<CommentDraft>
     remove(id: Id): Promise<void>
   }
   /**

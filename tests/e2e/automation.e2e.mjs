@@ -122,7 +122,7 @@ const baseConfig = (patch = {}) => {
 ;({ a: app, p: page } = await launch())
 await page.evaluate(() => window.relay.preferences.update({ showDemoData: false }))
 const info = await page.evaluate(() => window.relay.database.info())
-check('schema v15 applied (repost_tasks included)', info.schemaVersion === 15 && info.migrations.at(-1).name === 'repost_tasks')
+check('schema v16 applied (bulk_content included)', info.schemaVersion === 16 && info.migrations.at(-1).name === 'bulk_content')
 await page.evaluate((e) => window.relay.providers.create({ kind: 'ixbrowser', name: 'IX (mock)', endpoint: e, model: null, enabled: true }), `http://127.0.0.1:${ix.port}`)
 const sync1 = await page.evaluate(() => window.relay.ixbrowser.sync())
 let profiles = await page.evaluate(() => window.relay.ixbrowser.profiles())
@@ -213,7 +213,10 @@ await page.locator('#camp-name').fill('Keyboard tips')
 check('campaign form: Action, Profiles, Posts, Run time only', (await page.locator('main section[aria-label]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).filter((l) => ['Action', 'Profiles', 'Posts', 'Run time'].includes(l)).length === 4 && (await page.locator('#camp-interval, #camp-per-profile, [aria-label="Posting days"]').count()) === 0)
 check('action type: Post selected, Repost available', (await page.locator('[role="radio"][aria-checked="true"]:has-text("Post")').count()) === 1 && (await page.locator('[role="radio"]:has-text("Repost")').count()) === 1)
 const profilesSection = page.locator('section[aria-label="Profiles"]')
-check('campaign: no profile selection — every eligible synchronized profile counted', await waitFor(async () => (await profilesSection.innerText()).includes('4 of 5 synchronized profiles take part'), 8000) && (await profilesSection.locator('[role="radio"], [role="checkbox"], input[type="checkbox"]').count()) === 0, (await profilesSection.innerText().catch(() => '')).replace(/\n/g, ' | '))
+check('campaign: all synchronized profiles by default — every eligible one counted, no list to tick', await waitFor(async () => (await profilesSection.innerText()).includes('4 of 5 synchronized profiles take part'), 8000) && (await profilesSection.locator('[role="radio"][aria-checked="true"]:has-text("All synchronized profiles")').count()) === 1 && (await profilesSection.locator('input[type="checkbox"]').count()) === 0, (await profilesSection.innerText().catch(() => '')).replace(/\n/g, ' | '))
+await profilesSection.locator('[role="radio"]:has-text("Choose profiles")').click()
+check('… Choose profiles lists the 5 synchronized profiles, all ticked (Select all)', await waitFor(async () => (await profilesSection.locator('ul[aria-label="Profiles"] input[type="checkbox"]').count()) === 5 && (await profilesSection.locator('[aria-label="Select all profiles"]').isChecked()), 5000))
+await profilesSection.locator('[role="radio"]:has-text("All synchronized profiles")').click()
 check('start panel: 2 posts, each from one random profile (2 of 4 eligible)', await waitFor(async () => (await summary(page).innerText()).includes('2 posts, each from one random profile (2 profiles of 4)') && (await summary(page).innerText()).includes('can’t be used'), 8000), (await summary(page).innerText().catch(() => '')).replace(/\n/g, ' | '))
 // The preview: each post with its one randomly chosen account; Start must make exactly this assignment.
 const LABEL_TO_HANDLE = { 'Brand relay_a': 'relay_a', 'Brand relay_b': 'relay_b', 'Brand relay_c': 'relay_c', Unconfirmed: 'relay_d' }
@@ -225,7 +228,7 @@ await snap('03-campaign')
 await page.evaluate((c) => window.relay.presets.save({ name: 'Keyboard tips preset', config: c }), baseConfig({ name: 'Keyboard tips preset' }))
 
 const postsBefore1 = (await fxPosts()).length
-await page.locator('aside[aria-label="Start"] button:has-text("Start campaign")').click()
+await page.locator('aside[aria-label="Start"] button:has-text("Run campaign")').click()
 check('one click starts the campaign', await toastShown('Campaign started'))
 let run1 = await page.evaluate(() => window.relay.runs.active())
 check('campaign run created: 2 tasks — one per saved post, not one per post and profile', run1?.mode === 'full-auto' && run1.counts.total === 2, String(run1?.counts.total))
@@ -464,7 +467,7 @@ const p2 = (n) => String(n).padStart(2, '0')
 await page.locator('#camp-start').fill(`${tomorrow.getFullYear()}-${p2(tomorrow.getMonth() + 1)}-${p2(tomorrow.getDate())}T10:00`)
 check('run time: start panel shows 2 posts, each from one random profile, from tomorrow 10:00', await waitFor(async () => (await summary(page).innerText()).includes('2 posts, each from one random profile') && (await summary(page).innerText()).includes('10:00'), 8000), (await summary(page).innerText()).replace(/\n/g, ' | '))
 await snap('11-scheduled-campaign')
-await page.locator('aside[aria-label="Start"] button:has-text("Start campaign")').click()
+await page.locator('aside[aria-label="Start"] button:has-text("Schedule campaign")').click()
 const run10 = await waitFor(async () => (await page.evaluate(() => window.relay.runs.list()))[0]?.name === 'Tomorrow morning', 10000) ? (await page.evaluate(() => window.relay.runs.list()))[0] : null
 check('… both posts (one task each) wait for the run time (nothing published yet)', run10 !== null && (await waitFor(async () => (await details(run10.id)).items.length === 2 && (await details(run10.id)).items.every((i) => i.scheduleStatus === 'pending'), 20000)), run10 && JSON.stringify((await details(run10.id)).items.map((i) => [i.scheduleStatus, i.runAt])))
 if (run10) {
@@ -504,7 +507,7 @@ await page.locator('[aria-label="Choose https://x.com/someone_else/status/199900
 check('repost: start panel shows 1 repost', await waitFor(async () => (await summary(page).innerText()).includes('1 repost from your profiles'), 8000), (await summary(page).innerText()).replace(/\n/g, ' | '))
 check('repost: preview shows the post, its one account and Now', await waitFor(async () => /someone_else\/status\/1999000000000000001[\s\S]*(Brand relay_[abc]|Unconfirmed)[\s\S]*Now/.test(await page.locator('section[aria-label="Preview"]').innerText()), 8000), (await page.locator('section[aria-label="Preview"]').innerText().catch(() => '')).replace(/\n/g, ' | '))
 await snap('12-repost-campaign')
-await page.locator('aside[aria-label="Start"] button:has-text("Start campaign")').click()
+await page.locator('aside[aria-label="Start"] button:has-text("Run campaign")').click()
 check('repost: campaign started', await toastShown('Campaign started'))
 const run11 = await waitFor(async () => (await page.evaluate(() => window.relay.runs.list()))[0]?.name === 'Repost campaign', 10000) ? (await page.evaluate(() => window.relay.runs.list()))[0] : null
 check('repost: Completed only after the repost was confirmed — the item says Reposted', run11 !== null && (await waitFor(async () => (await details(run11.id)).run.status === 'completed', 120000)) && (await waitFor(async () => (await runPanel().getByText('Reposted').count()) > 0, 8000)), run11 && JSON.stringify((await details(run11.id)).items.map((i) => [i.status, i.taskStatus, i.error])))
@@ -528,7 +531,7 @@ await page.locator('[aria-label="Choose https://x.com/later_author/status/199900
 await page.locator('section[aria-label="Run time"] [role="radio"]:has-text("At a date and time")').click()
 await page.locator('#camp-start').fill(`${at11.getFullYear()}-${p2b(at11.getMonth() + 1)}-${p2b(at11.getDate())}T${p2b(at11.getHours())}:${p2b(at11.getMinutes())}`)
 await page.waitForTimeout(800)
-await page.locator('aside[aria-label="Start"] button:has-text("Start campaign")').click()
+await page.locator('aside[aria-label="Start"] button:has-text("Schedule campaign")').click()
 const run11s = await waitFor(async () => (await page.evaluate(() => window.relay.runs.list()))[0]?.name === 'Scheduled repost', 10000) ? (await page.evaluate(() => window.relay.runs.list()))[0] : null
 check('scheduled repost: shown as Scheduled for the chosen time', run11s !== null && (await waitFor(async () => (await details(run11s.id)).items[0]?.taskStatus === 'queued' && new Date((await details(run11s.id)).items[0].runAt).getTime() === at11.getTime(), 8000)), run11s && JSON.stringify((await details(run11s.id)).items))
 await waitFor(async () => Date.now() > at11.getTime() - 3000, 120000)
@@ -549,14 +552,14 @@ await page.locator('section[aria-label="Action"] [role="radio"]:has-text("Commen
 await page.locator('section[aria-label="Run time"] [role="radio"]:has-text("Now")').click()
 check('comment: totals of available post links shown', await waitFor(async () => /\d+ post links? available/.test(await page.locator('section[aria-label="Posts to comment on"]').innerText()), 5000))
 await page.locator('[aria-label="Choose https://x.com/another_author/status/1999000000000000002"]').click()
-check('comment: Start blocked until you write the comment', await waitFor(async () => (await summary(page).innerText()).includes('Write the comment'), 8000) && (await page.locator('aside[aria-label="Start"] button:has-text("Start campaign")').isDisabled()))
+check('comment: Start blocked until you write the comment', await waitFor(async () => (await summary(page).innerText()).includes('Write the comment'), 8000) && (await page.locator('aside[aria-label="Start"] button:has-text("Run campaign")').isDisabled()))
 await page.locator('#camp-comment').fill('Thanks for sharing the benchmark numbers — very useful.')
 await page.locator('[aria-label="Choose https://x.com/third_author/status/1999000000000000003"]').click()
 check('comment: with two posts selected, the preview puts the comment on one and shows the other as skipped (no repetitive replies)', await waitFor(async () => (await page.locator('section[aria-label="Preview"]').innerText()).includes('the same comment goes on one post only'), 8000) && (await page.locator('ul[aria-label="Planned tasks"] li').count()) === 2)
 await page.locator('[aria-label="Choose https://x.com/third_author/status/1999000000000000003"]').click()
 check('comment: start panel shows 1 comment', await waitFor(async () => (await summary(page).innerText()).includes('1 comment from your profiles'), 8000), (await summary(page).innerText()).replace(/\n/g, ' | '))
 await snap('13-comment-campaign')
-await page.locator('aside[aria-label="Start"] button:has-text("Start campaign")').click()
+await page.locator('aside[aria-label="Start"] button:has-text("Run campaign")').click()
 const run11b = await waitFor(async () => (await page.evaluate(() => window.relay.runs.list()))[0]?.name === 'Comment campaign', 10000) ? (await page.evaluate(() => window.relay.runs.list()))[0] : null
 check('comment: Completed only after X confirmed it — the item says Comment posted', run11b !== null && (await waitFor(async () => (await details(run11b.id)).run.status === 'completed', 120000)) && (await waitFor(async () => (await runPanel().getByText('Comment posted').count()) > 0, 8000)), run11b && JSON.stringify((await details(run11b.id)).items.map((i) => [i.taskStatus, i.error])))
 const replies11b = (await fxPosts()).slice(postsBefore11b)
@@ -584,6 +587,78 @@ const bulkLeft = async () => (await page.evaluate(() => window.relay.drafts.list
 check('… the 3 saved posts are deleted; the scheduled one is kept, with the reason shown', await waitFor(async () => (await bulkLeft()).length === 1 && (await bulkLeft())[0].id === keepScheduled.id, 10000) && (await toastShown('3 deleted, 1 kept', 8000)), JSON.stringify((await bulkLeft()).map((d) => d.body)))
 for (const e of (await page.evaluate(() => window.relay.publishing.list({ view: 'upcoming' }))).filter((x) => x.draft?.preview?.startsWith('Bulk delete test'))) await page.evaluate((id) => window.relay.publishing.unschedule(id), e.schedule.id)
 await page.locator('input[aria-label="Search drafts"]').fill('')
+
+// ── 11d. Bulk posts and bulk comments pasted from ChatGPT; a comment campaign with them, run now ──
+await go('#/dashboard')
+await go('#/create?mode=bulk')
+await page.waitForSelector('#bulk-post')
+const bulkCount = () => page.locator('[data-testid="bulk-count"]').innerText().catch(() => '')
+const chatgptPosts = `Sure! Here are 5 posts about remote work:
+
+1. Remote work tip #1: block focus time 🧠 #RemoteWork
+2. Async beats meetings — ask @teamlead https://example.com/async?x=1 #Productivity
+3. A walk at 3pm resets the day. #Wellbeing
+4. Bulk duplicate post #Same
+5. bulk  DUPLICATE post #same
+
+Let me know if you'd like more posts!`
+await page.locator('#bulk-post').fill(chatgptPosts)
+check('bulk posts: the paste is split — "5 posts detected" (numbered list)', await waitFor(async () => (await bulkCount()).includes('5 posts detected') && (await bulkCount()).includes('Numbered list'), 5000), await bulkCount())
+check('… ChatGPT’s introduction and closing note are left out, the repeat is marked', (await page.locator('ul[aria-label="Left out"] li').count()) === 2 && (await bulkCount()).includes('1 repeated'))
+check('… each post keeps its hashtags, mention, link and emoji; numbering removed', (await page.locator('textarea[aria-label="post 1"]').inputValue()) === 'Remote work tip #1: block focus time 🧠 #RemoteWork' && (await page.locator('textarea[aria-label="post 2"]').inputValue()) === 'Async beats meetings — ask @teamlead https://example.com/async?x=1 #Productivity')
+await page.locator('textarea[aria-label="post 3"]').fill('A walk at 3pm resets the day — edited. #Wellbeing')
+await page.locator('button[aria-label="Remove post 4"]').click()
+check('… review: a post edited and one removed → 4 left', await waitFor(async () => (await bulkCount()).includes('4 posts detected') && (await bulkCount()).includes('edited list'), 4000), await bulkCount())
+const draftsBefore11d = (await page.evaluate(() => window.relay.drafts.list())).length
+await snap('14-bulk-posts')
+// Double click: one request id for this list → saved once.
+await page.locator('button:has-text("Save All as Drafts")').dblclick()
+check('Save All as Drafts: one click saves all 4 — "4 drafts saved successfully"', await toastShown('4 drafts saved successfully', 15000))
+const after11d = await page.evaluate(() => window.relay.drafts.list())
+const bulkBodies = ['Remote work tip #1: block focus time 🧠 #RemoteWork', 'Async beats meetings — ask @teamlead https://example.com/async?x=1 #Productivity', 'A walk at 3pm resets the day — edited. #Wellbeing', 'bulk  DUPLICATE post #same']
+check('… exactly 4 new drafts, each once (a double click saved nothing twice), text as reviewed', after11d.length - draftsBefore11d === 4 && bulkBodies.every((b) => after11d.filter((d) => d.body === b).length === 1), JSON.stringify(after11d.slice(0, 5).map((d) => d.body)))
+check('… they appear in Saved posts, and the paste box is cleared for the next batch', (await page.locator('ul[aria-label="Drafts"] li', { hasText: 'Async beats meetings' }).count()) === 1 && (await page.locator('#bulk-post').inputValue()) === '')
+await page.locator('#bulk-post').fill(Array.from({ length: 301 }, (_, i) => `${i + 1}. Limit test post ${i + 1}`).join('\n'))
+check('301 posts: "301 detected", refused with the 300 limit, Save disabled', await waitFor(async () => (await bulkCount()).includes('301 posts detected'), 5000) && (await page.locator('[role="alert"]', { hasText: 'Up to 300 posts per save' }).count()) === 1 && (await page.locator('button:has-text("Save All as Drafts")').isDisabled()))
+await page.locator('#bulk-post').fill(`1. A short valid post #ok\n2. ${'Too long '.repeat(40)}`)
+check('a post over 280 characters is flagged (never cut), the valid one can be saved', await waitFor(async () => (await page.locator('ol[aria-label="Detected posts"]').innerText()).includes('over X’s 280 limit'), 5000))
+await page.locator('button:has-text("Save All as Drafts")').click()
+check('… partial save: 1 saved, the long one stays in the list to fix, with its reason', (await toastShown('1 draft saved successfully', 15000)) && (await waitFor(async () => (await page.locator('ol[aria-label="Detected posts"] li').count()) === 1 && (await page.locator('textarea[aria-label="post 1"]').inputValue()).startsWith('Too long'), 5000)) && (await page.locator('section[aria-label="Save result"]').innerText()).includes('280'))
+await page.locator('button:has-text("Clear")').click()
+
+// Bulk comments
+await go('#/dashboard')
+await go('#/create?mode=comments')
+await page.waitForSelector('#bulk-comment')
+await page.locator('#bulk-comment').fill('Here are 3 comments:\n\n1. Great breakdown, thanks for sharing!\n2. Curious how this scales — any numbers? @author\n3. Saved for later 🔖 #learning\n\nFeel free to adjust the tone.')
+check('bulk comments: "3 comments detected"', await waitFor(async () => (await bulkCount()).includes('3 comments detected'), 5000), await bulkCount())
+await page.locator('button:has-text("Save All as Comment Drafts")').click()
+check('Save All as Comment Drafts: "3 comment drafts saved successfully", listed under Saved comments', (await toastShown('3 comment drafts saved successfully', 15000)) && (await waitFor(async () => (await page.locator('ul[aria-label="Saved comments"] li').count()) === 3, 5000)))
+await snap('15-bulk-comments')
+
+// A comment campaign with the saved comments: 2 posts selected, 3 comments → 2 posted (one per post), 1 skipped.
+for (const id of ['1999000000000000004', '1999000000000000005']) await page.evaluate((u) => window.relay.links.add({ text: u, accountId: null, tags: [], notes: '' }), `https://x.com/bulk_author/status/${id}`).catch(() => null)
+const postsBefore11d = (await fxPosts()).length
+await go('#/dashboard')
+await go('#/campaigns')
+await page.waitForSelector('#camp-name')
+await page.locator('#camp-name').fill('Bulk comments campaign')
+await page.locator('section[aria-label="Action"] [role="radio"]:has-text("Comment")').click()
+await page.locator('section[aria-label="Run time"] [role="radio"]:has-text("Now")').click()
+for (const id of ['1999000000000000004', '1999000000000000005']) await page.locator(`[aria-label="Choose https://x.com/bulk_author/status/${id}"]`).click()
+await page.locator('[aria-label="Select all comments"]').click()
+check('campaign: Select all comments picks the 3 saved comments', await waitFor(async () => (await page.locator('ul[aria-label="Comments"] input[type="checkbox"]').evaluateAll((els) => els.filter((e) => e.checked).length)) === 3, 4000))
+check('… the preview: each post with its own comment and account; the 3rd comment skipped (one comment per post)', await waitFor(async () => (await page.locator('ul[aria-label="Planned tasks"] li').count()) === 3 && (await page.locator('section[aria-label="Preview"]').innerText()).includes('no post left'), 8000), (await page.locator('section[aria-label="Preview"]').innerText().catch(() => '')).replace(/\n/g, ' | '))
+check('… "Run campaign" — no date or time needed', (await page.locator('aside[aria-label="Start"] button:has-text("Run campaign")').isEnabled()) && (await summary(page).innerText()).includes('2 comments from your profiles'))
+const runsBefore11d = (await page.evaluate(() => window.relay.runs.list())).length
+await page.locator('aside[aria-label="Start"] button:has-text("Run campaign")').dblclick()
+const run11d = await waitFor(async () => (await page.evaluate(() => window.relay.runs.list()))[0]?.name === 'Bulk comments campaign', 10000) ? (await page.evaluate(() => window.relay.runs.list()))[0] : null
+check('… started immediately, once (a double click doesn’t start it twice)', run11d !== null && (await page.evaluate(() => window.relay.runs.list())).length - runsBefore11d === 1)
+check('… live status: Completed once X confirmed both comments', run11d !== null && (await waitFor(async () => (await details(run11d.id)).run.status === 'completed', 180000)) && (await waitFor(async () => (await runPanel().getByText('Comment posted').count()) >= 2, 8000)), run11d && JSON.stringify((await details(run11d.id)).items.map((i) => [i.taskStatus, i.error])))
+const replies11d = (await fxPosts()).slice(postsBefore11d)
+const savedTexts = ['Great breakdown, thanks for sharing!', 'Curious how this scales — any numbers? @author', 'Saved for later 🔖 #learning']
+check('… X received one reply on each selected post, each a different saved comment', replies11d.length === 2 && new Set(replies11d.map((r) => r.inReplyTo)).size === 2 && replies11d.every((r) => ['1999000000000000004', '1999000000000000005'].includes(r.inReplyTo) && savedTexts.includes(r.text.trim())) && new Set(replies11d.map((r) => r.text.trim())).size === 2, JSON.stringify(replies11d.map((r) => [r.inReplyTo, r.text, r.handle])))
+check('… from two different accounts (never several of your accounts on one post)', new Set(replies11d.map((r) => r.handle)).size === 2)
 await go('#/dashboard')
 await go(`#/campaigns?run=${run11b.id}`)
 await page.waitForSelector('#camp-name')

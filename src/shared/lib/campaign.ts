@@ -7,15 +7,20 @@ import type { AutomationConfig } from '@shared/types/automation'
 
 export type CampaignAction = 'post' | 'repost' | 'comment'
 
-/** The choices of a campaign; everything else is fixed (see toConfig). Profiles are never chosen: every eligible synchronized profile takes part. */
+/** The choices of a campaign; everything else is fixed (see toConfig). */
 export interface CampaignChoices {
   name: string
   action: CampaignAction
   draftIds: string[]
   /** Repost / comment targets (post links). */
   repostLinks: string[]
-  /** Your comment (comment action) — you approve and post it yourself from the task. */
+  /** One comment you write here (comment action, when no saved comments are chosen) — it goes on one post. */
   commentText: string
+  /** Saved comments (bulk comments) for the comment action, in order: one comment per post. */
+  commentIds: string[]
+  /** Every eligible synchronized profile, or only the chosen ones (still only eligible ones take part). */
+  profileScope: 'all' | 'selected'
+  profileIds: string[]
   when: 'now' | 'schedule'
   startAt: string | null
   /** This campaign's random account order (a new one for each new campaign; the preview and Start share it). */
@@ -31,6 +36,9 @@ export const defaultChoices = (): CampaignChoices => ({
   draftIds: [],
   repostLinks: [],
   commentText: '',
+  commentIds: [],
+  profileScope: 'all',
+  profileIds: [],
   when: 'now',
   startAt: null,
   seed: newSeed()
@@ -39,7 +47,9 @@ export const defaultChoices = (): CampaignChoices => ({
 /**
  * The automation config for these choices, on the existing campaign engine. Every selected post goes
  * out once, from one randomly chosen eligible synchronized profile (the main process decides which
- * profiles are eligible; the campaign's seed fixes the random order, so Start = the preview). Fixed: posted
+ * profiles are eligible — all synchronized ones, or only those you chose; the campaign's seed fixes the
+ * random order, so Start = the preview). Saved comments go one per post (their own target, or the
+ * selected posts in order). Fixed: posted
  * automatically, the signed-in account checked wherever its X username is confirmed, one post per
  * slot (queue spacing applies), no end date / posting days / hours. A saved post's comment goes out
  * as a reply from the same account after the post. Reposts and comments on Post Links are tasks you
@@ -48,7 +58,9 @@ export const defaultChoices = (): CampaignChoices => ({
  */
 export function toConfig(c: CampaignChoices): AutomationConfig {
   const posting = c.action === 'post'
-  const count = Math.min(Math.max(c.draftIds.length, 1), 50)
+  // Room for every selected post even on a single profile (up to 300 per campaign).
+  const count = Math.min(Math.max(c.draftIds.length, 1), 300)
+  const savedComments = c.action === 'comment' && (c.commentIds?.length ?? 0) > 0
   return {
     name: c.name.trim() || 'Campaign',
     mode: 'full-auto',
@@ -75,7 +87,7 @@ export function toConfig(c: CampaignChoices): AutomationConfig {
       existingAssetId: null
     },
     // One randomly chosen eligible account per selected post (accounts in this campaign's random order).
-    targets: { scope: 'all', profileIds: [], distribution: 'unique', allowDuplicates: false, requireConfirmedIdentity: false, createMissingAccounts: true, shuffleSeed: c.seed },
+    targets: { scope: c.profileScope === 'selected' ? 'selected' : 'all', profileIds: c.profileScope === 'selected' ? (c.profileIds ?? []) : [], distribution: 'unique', allowDuplicates: false, requireConfirmedIdentity: false, createMissingAccounts: true, shuffleSeed: c.seed },
     actions: {
       publish: posting,
       saveDrafts: false,
@@ -83,7 +95,8 @@ export function toConfig(c: CampaignChoices): AutomationConfig {
       comment: c.action === 'comment',
       like: false,
       engagementLinks: posting ? [] : c.repostLinks,
-      commentText: c.action === 'comment' ? c.commentText : ''
+      commentText: c.action === 'comment' && !savedComments ? c.commentText : '',
+      ...(savedComments ? { commentIds: c.commentIds } : {})
     },
     schedule: { when: c.when, startAt: c.when === 'schedule' ? c.startAt : null, endAt: null, intervalMinutes: 0, postsPerProfile: count, maxPostsPerRun: 500, workingHours: { enabled: false, start: '09:00', end: '18:00' }, days: [0, 1, 2, 3, 4, 5, 6] },
     // A failing account never stops the others: its own posts fail (or are held when it is signed out); the run keeps going.

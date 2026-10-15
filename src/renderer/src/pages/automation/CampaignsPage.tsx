@@ -1,5 +1,5 @@
 import { CircleX, History, Play, SearchCheck, TriangleAlert } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import type { RunPlan } from '@shared/types/automation'
 import type { TaskView } from '@shared/types/publishing'
@@ -37,6 +37,8 @@ export function CampaignsPage() {
   const [plan, setPlan] = useState<RunPlan | null>(null)
   const [checking, setChecking] = useState(false)
   const [starting, setStarting] = useState(false)
+  // Set synchronously on the first click, so a quick second click can't start the campaign twice.
+  const startingRef = useRef(false)
   const presets = usePresets()
   const active = useActiveRun()
   const runs = useRuns()
@@ -103,17 +105,20 @@ export function CampaignsPage() {
       : `${pluralize(plan.engagementTasks, choices.action === 'repost' ? 'repost' : 'comment')} from your profiles`
 
   const start = async () => {
+    if (startingRef.current) return
+    startingRef.current = true
     setStarting(true)
     try {
       const run = await relay.runs.start(config)
       setParams({ run: run.id }, { replace: true })
       // These posts and links now belong to this campaign; the form is ready for the next one.
       // A new campaign gets a new random account order.
-      setChoices((c) => ({ ...c, draftIds: [], repostLinks: [], seed: newSeed() }))
+      setChoices((c) => ({ ...c, draftIds: [], repostLinks: [], commentIds: [], seed: newSeed() }))
       toast({ tone: 'success', title: 'Campaign started' })
     } catch (error) {
       toast({ tone: 'danger', title: 'Campaign didn’t start', description: errorMessage(error), duration: 9000 })
     } finally {
+      startingRef.current = false
       setStarting(false)
     }
   }
@@ -152,8 +157,9 @@ export function CampaignsPage() {
             </p>
           ))}
           <Button variant="primary" icon={Play} className="h-10" disabled={!canStart} loading={starting} onClick={start}>
-            Start campaign
+            {choices.when === 'now' ? 'Run campaign' : 'Schedule campaign'}
           </Button>
+          {choices.when === 'now' && <p className="text-xs text-fg-subtle">Starts right away — no date or time needed. Progress, results and errors show above.</p>}
           {busy && <p className="text-xs text-fg-subtle">A campaign is already running. Wait for it to finish or stop it first.</p>}
         </aside>
       </div>

@@ -40,7 +40,7 @@ const waitFor = async (fn: () => boolean, ms = 8_000) => {
 const file = process.argv[2]!
 for (const s of ['', '-wal', '-shm']) rmSync(file + s, { force: true })
 const db = new SqliteDatabase(file).open()
-check('migrate → v15 (repost tasks)', migrate(db, log as never) === 15)
+check('migrate → v16 (repost tasks)', migrate(db, log as never) === 16)
 check('the tasks table accepts repost tasks (rebuilt CHECK)', (() => {
   try {
     db.run("INSERT INTO tasks (id, kind, status, label, run_after, created_at, updated_at) VALUES ('probe', 'repost', 'cancelled', 'x', 'x', 'x', 'x')")

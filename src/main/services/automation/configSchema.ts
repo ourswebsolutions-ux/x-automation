@@ -55,8 +55,9 @@ export const automationConfigSchema = z
         repost: z.boolean(),
         comment: z.boolean(),
         like: z.boolean(),
-        engagementLinks: z.array(z.string().max(500)).max(200),
-        commentText: z.string().max(4000)
+        engagementLinks: z.array(z.string().max(500)).max(300),
+        commentText: z.string().max(4000),
+        commentIds: z.array(id).max(300).optional()
       })
       .strict(),
     schedule: z
@@ -65,7 +66,7 @@ export const automationConfigSchema = z
         startAt: iso.nullable(),
         endAt: iso.nullable(),
         intervalMinutes: z.number().int().min(0).max(1440),
-        postsPerProfile: z.number().int().min(1).max(50),
+        postsPerProfile: z.number().int().min(1).max(300),
         maxPostsPerRun: z.number().int().min(1).max(500),
         workingHours: z.object({ enabled: z.boolean(), start: time, end: time }).strict(),
         // Older configs have no posting days: every day.

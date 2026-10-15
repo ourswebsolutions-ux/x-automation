@@ -21,6 +21,7 @@ import type { AccountRepository } from '../database/sqlite/accountRepository'
 import type { AssetRepository } from '../database/sqlite/assetRepository'
 import type { ProfileRepository } from '../database/sqlite/profileRepository'
 import type { DraftService } from '../drafts/draftService'
+import { CommentDraftService } from '../drafts/commentDraftService'
 import { ConflictError, NotFoundError, ValidationError } from '../errors'
 import type { GeneratorService } from '../generator/generatorService'
 import type { ImageService } from '../images/imageService'
@@ -30,7 +31,7 @@ import type { ScopedLogger } from '../logging/logger'
 import type { Notifier } from '../notifications/notifier'
 import type { ProviderService } from '../providers/providerService'
 import type { PreferencesStore } from '../preferences/preferencesStore'
-import { parsePostUrl } from '../publishing/postUrl'
+import { parsePostUrl, type ParsedPostUrl } from '../publishing/postUrl'
 import type { PublishingService } from '../publishing/publishingService'
 import type { QueueService } from '../queue/queueService'
 import { parseConfig } from './configSchema'
@@ -48,6 +49,8 @@ interface Deps {
   preferences: Pick<PreferencesStore, 'get'>
   publishing: PublishingService
   engagement: Pick<EngagementService, 'create' | 'setStatus' | 'check'>
+  /** Saved comments (bulk comments); made from db when not given. */
+  comments?: Pick<CommentDraftService, 'byIds' | 'markUsed'>
   queue: QueueService
   notifier: Notifier
   log: ScopedLogger
@@ -149,7 +152,11 @@ export class RunService {
   private readonly processing = new Set<string>()
   private readonly failuresInRow = new Map<string, number>()
 
+  private readonly comments: Pick<CommentDraftService, 'byIds' | 'markUsed'>
+  private lastStart: { key: string; runId: string } | null = null
+
   constructor(private readonly deps: Deps) {
+    this.comments = deps.comments ?? new CommentDraftService(deps.db, deps.log)
     deps.queue.onSettled((task, settlement) => {
       // A campaign repost or comment: its Post Links task is done once X confirmed it; the run finishes when all have an outcome.
       const engagementTaskId = typeof task.payload.engagementTaskId === 'string' ? task.payload.engagementTaskId : null
@@ -350,9 +357,16 @@ export class RunService {
     const links = actions.engagementLinks.map((l) => l.trim()).filter(Boolean)
     const kinds = [actions.repost && 'repost', actions.comment && 'comment', actions.like && 'like'].filter(Boolean) as string[]
     const badLinks = links.filter((l) => !parsePostUrl(l))
-    if (kinds.length && links.length === 0) block('Add the post links for reposting, commenting or liking.')
+    // Saved comments (bulk comments): each goes on its own target post or on a selected post.
+    const savedComments = actions.comment && actions.commentIds?.length ? this.comments.byIds(actions.commentIds) : null
+    const ownTargets = savedComments?.filter((c) => c.targetUrl).length ?? 0
+    if (kinds.length && links.length === 0 && !(kinds.length === 1 && ownTargets > 0)) block(savedComments ? 'Select the posts to comment on (or give your comments a target post).' : 'Add the post links for reposting, commenting or liking.')
     if (badLinks.length) block(`${badLinks.length} engagement ${badLinks.length === 1 ? 'link is' : 'links are'} not a link to a post on X.`)
-    if (actions.comment && !actions.commentText.trim()) block('Write the comment.')
+    if (savedComments) {
+      const missing = new Set(actions.commentIds).size - savedComments.length
+      if (savedComments.length === 0) block('The selected comments no longer exist. Choose your comments again.')
+      else if (missing > 0) warn(`${missing} selected ${missing === 1 ? 'comment no longer exists' : 'comments no longer exist'} and ${missing === 1 ? 'is' : 'are'} left out.`)
+    } else if (actions.comment && !actions.commentText.trim()) block(actions.commentIds ? 'Choose the comments to post.' : 'Write the comment.')
     // Post campaigns from your saved posts: each post with its account and time — what Start will create.
     const postPreview: RunPlan['postPreview'] = []
     if (publishing && content.source === 'drafts' && fromDrafts > 0 && start && !problems.some((p) => p.blocking)) {
@@ -366,12 +380,18 @@ export class RunService {
     // Each selected post gets one of your accounts (several of your accounts on one post is coordinated
     // engagement); the same comment goes on one post only (repetitive automated replies). The preview
     // shows the assignment Start will make, with every skipped post and its reason.
-    const engagementPreview = kinds.length && !badLinks.length ? this.engagementAssignments(config, eligible.map((t) => t.accountId).filter((a): a is string => Boolean(a))).map((a) => ({ url: a.url, kind: a.kind, accountId: a.accountId, accountLabel: a.accountId ? (this.deps.accounts.get(a.accountId)?.label ?? null) : null, runAt: a.accountId ? a.dueAt : null, skipped: a.skipped })) : []
+    const engagementPreview = kinds.length && !badLinks.length ? this.engagementAssignments(config, eligible.map((t) => t.accountId).filter((a): a is string => Boolean(a))).map((a) => ({ url: a.url, kind: a.kind, accountId: a.accountId, accountLabel: a.accountId ? (this.deps.accounts.get(a.accountId)?.label ?? null) : null, runAt: a.accountId ? a.dueAt : null, skipped: a.skipped, text: a.text, commentId: a.commentId })) : []
     const engagementTasks = engagementPreview.filter((p) => !p.skipped).length
     if (kinds.length && links.length && !badLinks.length && engagementTasks === 0) block('None of the selected posts can be assigned to one of your accounts — see the reasons in the preview.')
-    if (actions.comment && links.length > 1) warn('The same comment goes on one post only (repeating it on several posts is repetitive replying): the other selected posts are skipped. Write a separate comment for each post.')
+    if (actions.comment && !savedComments && links.length > 1) warn('The same comment goes on one post only (repeating it on several posts is repetitive replying): the other selected posts are skipped. Write a separate comment for each post.')
     if (engagementTasks && actions.like) warn('Likes are planned as tasks you complete in the profile — X Auto doesn’t like posts by itself.')
     if (engagementTasks && (actions.repost || actions.comment)) warn('Each post is reposted or commented on from one of your accounts only — several of your accounts on one post is coordinated engagement.')
+    if (savedComments) {
+      const noTarget = engagementPreview.filter((p) => p.kind === 'reply' && p.commentId && p.skipped).length
+      const noComment = engagementPreview.filter((p) => p.kind === 'reply' && !p.commentId && p.skipped).length
+      if (noTarget) warn(`${noTarget} ${noTarget === 1 ? 'comment has' : 'comments have'} no post to go on and ${noTarget === 1 ? 'is' : 'are'} skipped — select more posts, or fewer comments. One comment per post.`)
+      if (noComment) warn(`${noComment} selected ${noComment === 1 ? 'post has' : 'posts have'} no comment left and ${noComment === 1 ? 'is' : 'are'} skipped — select more comments.`)
+    }
 
     const summary: string[] = []
     if (publishing) summary.push(config.mode === 'full-auto' ? 'Publish automatically' : 'Publish after your approval')
@@ -439,6 +459,11 @@ export class RunService {
   /** Starts a run (the single confirmation happens in the UI before this call). */
   async start(input: AutomationConfig, presetId: Id | null = null, options: { scheduleId?: Id } = {}): Promise<AutomationRun> {
     const config = parseConfig(input)
+    // The same campaign sent twice (a repeated click or request) starts once while the first is still
+    // going: each new campaign from the form has its own seed, so only a repeat matches.
+    const startKey = JSON.stringify(config)
+    const previous = !options.scheduleId && this.lastStart?.key === startKey ? this.deps.db.get<{ status: string }>('SELECT status FROM automation_runs WHERE id = :id', { id: this.lastStart.runId }) : null
+    if (previous && !['completed', 'stopped', 'failed'].includes(previous.status)) throw new ConflictError('This campaign was just started. Its progress is shown in the campaign status.')
     const plan = this.plan(config)
     const blocking = plan.problems.find((p) => p.blocking)
     if (blocking) throw new ValidationError(blocking.message)
@@ -481,6 +506,7 @@ export class RunService {
       }
     })
     this.deps.log.info('Automation run started', { mode: config.mode, posts: plan.posts, profiles: targets.length, images: config.content.generateImages })
+    if (!options.scheduleId) this.lastStart = { key: startKey, runId }
 
     // Engagement tasks: one account per post link (guardrails apply), done by the user.
     const engagementCount = this.planEngagement(runId, config, targets)
@@ -994,57 +1020,70 @@ export class RunService {
   /**
    * Which one of your accounts acts on each selected post (or why the post is skipped). Accounts take
    * turns, so the selected posts are spread over your accounts; each post gets one account only, and
-   * a comment goes on one post only. Used for the preview and, unchanged, by Start.
+   * a comment goes on one post only. Saved comments (bulk comments) are paired with posts: a comment's
+   * own target first, then the selected posts in order — one comment per post, never a made-up
+   * target. Used for the preview and, unchanged, by Start.
    */
-  private engagementAssignments(config: AutomationConfig, accounts: string[]): { url: string; postId: string; handle: string | null; linkId: string | null; kind: 'repost' | 'reply' | 'like'; accountId: string | null; dueAt: string | null; skipped: string | null }[] {
-    const links = [...new Map(config.actions.engagementLinks.map((l) => parsePostUrl(l)).filter((l): l is NonNullable<ReturnType<typeof parsePostUrl>> => Boolean(l)).map((l) => [l.postId, l])).values()]
+  private engagementAssignments(config: AutomationConfig, accounts: string[]): EngagementAssignment[] {
+    const links = [...new Map(config.actions.engagementLinks.map((l) => parsePostUrl(l)).filter((l): l is ParsedPostUrl => Boolean(l)).map((l) => [l.postId, l])).values()]
     const kinds = [config.actions.repost && 'repost', config.actions.comment && 'reply', config.actions.like && 'like'].filter(Boolean) as ('repost' | 'reply' | 'like')[]
     // A campaign's run time becomes the task's due time (now = no due time).
     const dueAt = config.schedule.when === 'schedule' ? config.schedule.startAt : null
-    const out: ReturnType<RunService['engagementAssignments']> = []
+    const saved = config.actions.comment && config.actions.commentIds?.length ? this.comments.byIds(config.actions.commentIds) : null
+    const out: EngagementAssignment[] = []
     let turn = 0
     let commented = false
+    const linkIdOf = (parsed: ParsedPostUrl) => this.deps.db.get<{ id: string }>('SELECT id FROM post_links WHERE url = :url OR post_id = :postId', { url: parsed.url, postId: parsed.postId })?.id ?? null
+    const assign = (parsed: ParsedPostUrl, kind: 'repost' | 'reply' | 'like', text: string | null, commentId: string | null) => {
+      const linkId = linkIdOf(parsed)
+      const base = { url: parsed.url, postId: parsed.postId, handle: parsed.handle, linkId, kind, dueAt, text, commentId }
+      if (!accounts.length) return out.push({ ...base, accountId: null, skipped: 'Skipped: none of your synchronized profiles can be used.' })
+      // One account per post and kind — several of your accounts on one post is coordinated engagement.
+      let chosen: string | null = null
+      let reason: string | null = null
+      // A post by one of your accounts may only be reposted/liked by that same account (else it is
+      // artificial amplification) — checked here too for posts not yet in Post Links.
+      const owner = !linkId && kind !== 'reply' && parsed.handle ? this.deps.accounts.byHandle(parsed.handle) : null
+      for (let i = 0; i < accounts.length; i++) {
+        const accountId = accounts[(turn + i) % accounts.length]!
+        if (!linkId) {
+          if (owner && owner.id !== accountId) {
+            reason ??= `This post is from ${owner.label}, one of your accounts — only that account may ${kind === 'repost' ? 'repost' : 'like'} it.`
+            continue
+          }
+          chosen = accountId
+          break
+        }
+        const check = this.deps.engagement.check({ linkId, accountId, kind, dueAt, note: '', replyText: text ?? '' })
+        const blocking = check.problems.find((p) => p.blocking)
+        if (!blocking) {
+          chosen = accountId
+          break
+        }
+        reason ??= blocking.message
+      }
+      if (chosen) {
+        turn++
+        if (kind === 'reply') commented = true
+      }
+      return out.push({ ...base, accountId: chosen, skipped: chosen ? null : `Skipped: ${reason ?? 'no account can take it.'}` })
+    }
+
     for (const parsed of links) {
-      const linkId = this.deps.db.get<{ id: string }>('SELECT id FROM post_links WHERE url = :url OR post_id = :postId', { url: parsed.url, postId: parsed.postId })?.id ?? null
       for (const kind of kinds) {
-        const base = { url: parsed.url, postId: parsed.postId, handle: parsed.handle, linkId, kind, dueAt }
+        if (kind === 'reply' && saved) continue
         if (kind === 'reply' && commented) {
-          out.push({ ...base, accountId: null, skipped: 'Skipped: the same comment goes on one post only. Write a separate comment for this post.' })
+          out.push({ url: parsed.url, postId: parsed.postId, handle: parsed.handle, linkId: linkIdOf(parsed), kind, dueAt, text: config.actions.commentText.trim(), commentId: null, accountId: null, skipped: 'Skipped: the same comment goes on one post only. Write a separate comment for this post.' })
           continue
         }
-        if (!accounts.length) {
-          out.push({ ...base, accountId: null, skipped: 'Skipped: none of your synchronized profiles can be used.' })
-          continue
-        }
-        // One account per post and kind — several of your accounts on one post is coordinated engagement.
-        let chosen: string | null = null
-        let reason: string | null = null
-        // A post by one of your accounts may only be reposted/liked by that same account (else it is
-        // artificial amplification) — checked here too for posts not yet in Post Links.
-        const owner = !linkId && kind !== 'reply' && parsed.handle ? this.deps.accounts.byHandle(parsed.handle) : null
-        for (let i = 0; i < accounts.length; i++) {
-          const accountId = accounts[(turn + i) % accounts.length]!
-          if (!linkId) {
-            if (owner && owner.id !== accountId) {
-              reason ??= `This post is from ${owner.label}, one of your accounts — only that account may ${kind === 'repost' ? 'repost' : 'like'} it.`
-              continue
-            }
-            chosen = accountId
-            break
-          }
-          const check = this.deps.engagement.check({ linkId, accountId, kind, dueAt, note: '', replyText: kind === 'reply' ? config.actions.commentText : '' })
-          const blocking = check.problems.find((p) => p.blocking)
-          if (!blocking) {
-            chosen = accountId
-            break
-          }
-          reason ??= blocking.message
-        }
-        if (chosen) {
-          turn++
-          if (kind === 'reply') commented = true
-        }
-        out.push({ ...base, accountId: chosen, skipped: chosen ? null : `Skipped: ${reason ?? 'no account can take it.'}` })
+        assign(parsed, kind, kind === 'reply' ? config.actions.commentText.trim() : null, null)
+      }
+    }
+    if (saved) {
+      for (const pair of pairComments(saved, links)) {
+        if (pair.target && pair.comment) assign(pair.target, 'reply', pair.comment.body, pair.comment.id)
+        else if (pair.comment) out.push({ url: '', postId: '', handle: null, linkId: null, kind: 'reply', dueAt, text: pair.comment.body, commentId: pair.comment.id, accountId: null, skipped: pair.reason })
+        else if (pair.target) out.push({ url: pair.target.url, postId: pair.target.postId, handle: pair.target.handle, linkId: linkIdOf(pair.target), kind: 'reply', dueAt, text: null, commentId: null, accountId: null, skipped: pair.reason })
       }
     }
     return out
@@ -1094,7 +1133,8 @@ export class RunService {
       }
       {
         {
-          const result = this.deps.engagement.create({ linkIds: [linkId], accountId, kind, dueAt, note: `From campaign “${config.name}”`, replyText: kind === 'reply' ? config.actions.commentText : '' })
+          const replyText = kind === 'reply' ? (assignment.text ?? '') : ''
+          const result = this.deps.engagement.create({ linkIds: [linkId], accountId, kind, dueAt, note: `From campaign “${config.name}”`, replyText })
           if (result.created.length) {
             const task = result.created[0]!
             // Reposts and comments run in the persistent task queue at the chosen time (never earlier),
@@ -1114,12 +1154,14 @@ export class RunService {
                 draftId: null,
                 scheduleId: null,
                 label: kind === 'repost' ? 'Repost' : 'Comment on a post',
-                payload: kind === 'repost' ? { engagementTaskId: task.id, url: parsed.url, dueAt } : { engagementTaskId: task.id, parentPostId: parsed.postId, parentUrl: parsed.url, text: config.actions.commentText.trim(), dueAt },
+                payload: kind === 'repost' ? { engagementTaskId: task.id, url: parsed.url, dueAt } : { engagementTaskId: task.id, parentPostId: parsed.postId, parentUrl: parsed.url, text: replyText.trim(), dueAt },
                 // One queue task per engagement task: a retry or a restart never repeats it.
                 idempotencyKey: `engage:${task.id}`,
                 maxAttempts: this.deps.publishing.getSettings().maxAttempts,
                 runAfter: dueAt ?? now
               })
+              // A saved comment is used once it is planned (it shows as used; choosing it again is up to you).
+              if (assignment.commentId) this.comments.markUsed([assignment.commentId], now)
             })
             created++
           }
@@ -1402,3 +1444,46 @@ export class RunService {
   }
 }
 
+
+interface EngagementAssignment {
+  url: string
+  postId: string
+  handle: string | null
+  linkId: string | null
+  kind: 'repost' | 'reply' | 'like'
+  accountId: string | null
+  dueAt: string | null
+  skipped: string | null
+  /** Comments: the text to post and the saved comment it comes from. */
+  text: string | null
+  commentId: string | null
+}
+
+type CommentPair = { comment: { id: string; body: string } | null; target: ParsedPostUrl | null; reason: string | null }
+
+/**
+ * Saved comments ↔ posts, one comment per post: a comment with its own target goes on that post;
+ * the others take the selected posts in order. Comments without a post and posts without a comment
+ * are returned with the reason they are skipped. Never invents a target.
+ */
+export function pairComments(comments: { id: string; body: string; targetUrl: string | null }[], selected: ParsedPostUrl[]): CommentPair[] {
+  const taken = new Set<string>()
+  const result: CommentPair[] = comments.map((c) => {
+    if (!c.targetUrl) return { comment: c, target: null, reason: null }
+    const target = parsePostUrl(c.targetUrl)
+    if (!target) return { comment: c, target: null, reason: 'Skipped: its target is not a link to a post on X.' }
+    if (taken.has(target.postId)) return { comment: c, target: null, reason: 'Skipped: another selected comment already goes on its target post (one comment per post).' }
+    taken.add(target.postId)
+    return { comment: c, target, reason: null }
+  })
+  const free = selected.filter((l) => !taken.has(l.postId))
+  let next = 0
+  for (const pair of result) {
+    if (pair.target || pair.reason) continue
+    const target = free[next++]
+    if (target) pair.target = target
+    else pair.reason = 'Skipped: no post left for this comment — select another post to comment on, or give the comment a target.'
+  }
+  for (const target of free.slice(next)) result.push({ comment: null, target, reason: 'Skipped: no comment left for this post — select another comment.' })
+  return result
+}

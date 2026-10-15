@@ -58,7 +58,7 @@ const dir = `${path}-assets`
 for (const s of ['', '-wal', '-shm']) rmSync(path + s, { force: true })
 rmSync(dir, { recursive: true, force: true })
 const db = new SqliteDatabase(path).open()
-check('migrate → v15', migrate(db, log) === 15)
+check('migrate → v16', migrate(db, log) === 16)
 const assetExists = (rel: string) => existsSync(join(dir, rel))
 const repos = createSqliteRepositories(db, { assetExists })
 const assetRepo = new AssetRepository(db)

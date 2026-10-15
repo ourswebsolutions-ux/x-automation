@@ -1,9 +1,11 @@
-import { Link2, RefreshCw, SquarePen, UsersRound } from 'lucide-react'
+import { Link2, MessagesSquare, RefreshCw, SquarePen, UsersRound } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import type { RunPlan } from '@shared/types/automation'
 import { Button, Checkbox, Field, Input, SearchField, SegmentedControl, Spinner, Textarea, useToast } from '@/components/ui'
+import { useComments } from '@/data/comments'
 import { useDrafts } from '@/data/drafts'
+import { useBrowserProfiles } from '@/data/ixbrowser'
 import { useLinks } from '@/data/links'
 import { errorMessage, relay } from '@/lib/bridge'
 import { cn } from '@/lib/cn'
@@ -108,13 +110,14 @@ export function CampaignForm({ value, onChange, plan, checking }: { value: Campa
             {value.action === 'repost'
               ? 'X Auto reposts each chosen post at the run time from one of your accounts, in its own profile, and counts it only once the post shows as reposted on X.'
               : 'X Auto posts your comment as a reply to the chosen post at the run time, from one of your accounts, and counts it only once X confirms it.'}{' '}
-            One of your accounts per post — never the same action from several of your accounts (that is coordinated engagement).{value.action === 'comment' ? ' One post per comment.' : ''}
+            One of your accounts per post — never the same action from several of your accounts (that is coordinated engagement).{value.action === 'comment' ? ' One comment per post: each saved comment goes on its own target post, or on the next selected post.' : ''}
           </p>
         )}
       </Section>
 
       <Section step={2} title="Profiles">
         <Participants plan={plan} checking={checking} />
+        <ProfileChooser value={value} onChange={set} plan={plan} />
       </Section>
 
       <Section step={3} title={value.action === 'post' ? 'Posts' : value.action === 'repost' ? 'Posts to repost' : 'Posts to comment on'}>
@@ -146,8 +149,9 @@ export function CampaignForm({ value, onChange, plan, checking }: { value: Campa
         ) : (
           <>
             <LinkPicker value={value.repostLinks} onChange={(repostLinks) => set({ repostLinks })} />
-            {value.action === 'comment' && (
-              <Field label="Your comment" htmlFor="camp-comment" hint="Written by you and relevant to the post; posted as a reply to it at the run time. (To comment on your own new posts, add the comment in Create Post.)">
+            {value.action === 'comment' && <CommentPicker value={value.commentIds ?? []} onChange={(commentIds) => set({ commentIds })} />}
+            {value.action === 'comment' && !(value.commentIds ?? []).length && (
+              <Field label="Or write one comment" htmlFor="camp-comment" hint="Written by you and relevant to the post; posted as a reply to one selected post at the run time. (To comment on your own new posts, add the comment in Create Post.)">
                 <Textarea id="camp-comment" rows={3} maxLength={280} value={value.commentText} onChange={(e) => set({ commentText: e.target.value })} />
               </Field>
             )}
@@ -192,7 +196,14 @@ function AssignmentPreview({ plan, checking, action, when }: { plan: RunPlan | n
   const rows =
     action === 'post'
       ? (plan?.postPreview ?? []).map((p, i) => ({ key: `${p.draftId}|${i}`, title: p.text.trim().replace(/\s+/g, ' ') || 'Image-only post', mono: false, accountLabel: p.accountLabel, runAt: when === 'now' ? null : p.runAt, skipped: null as string | null }))
-      : (plan?.engagementPreview ?? []).map((r) => ({ key: `${r.url}|${r.kind}`, title: r.url.replace('https://x.com/', ''), mono: true, accountLabel: r.accountLabel, runAt: r.runAt, skipped: r.skipped }))
+      : (plan?.engagementPreview ?? []).map((r, i) => ({
+          key: `${r.url}|${r.kind}|${r.commentId ?? i}`,
+          title: [r.url ? r.url.replace('https://x.com/', '') : 'No post', r.kind === 'reply' && r.text ? `“${r.text.replace(/\s+/g, ' ')}”` : ''].filter(Boolean).join(' · '),
+          mono: !(r.kind === 'reply' && r.text),
+          accountLabel: r.accountLabel,
+          runAt: r.runAt,
+          skipped: r.skipped
+        }))
   const assigned = rows.filter((r) => !r.skipped).length
   const noun = action === 'post' ? ['post', 'posts'] : action === 'repost' ? ['repost', 'reposts'] : ['comment', 'comments']
   return (
@@ -225,6 +236,121 @@ function AssignmentPreview({ plan, checking, action, when }: { plan: RunPlan | n
         </ul>
       )}
     </section>
+  )
+}
+
+/** Every eligible synchronized profile, or only the profiles you tick (only eligible ones take part either way). */
+function ProfileChooser({ value, onChange, plan }: { value: CampaignChoices; onChange: (patch: Partial<CampaignChoices>) => void; plan: RunPlan | null }) {
+  const profiles = useBrowserProfiles()
+  const list = profiles.data ?? []
+  const scope = value.profileScope ?? 'all'
+  const ids = value.profileIds ?? []
+  const reasonOf = (id: string) => plan?.targets.find((t) => t.profileId === id)?.reason ?? null
+  const allChecked = list.length > 0 && list.every((p) => ids.includes(p.id))
+  return (
+    <div className="flex flex-col gap-2">
+      <SegmentedControl<'all' | 'selected'>
+        aria-label="Which profiles"
+        size="sm"
+        value={scope}
+        onChange={(next) => onChange({ profileScope: next, profileIds: next === 'selected' && ids.length === 0 ? list.map((p) => p.id) : ids })}
+        options={[
+          { value: 'all', label: 'All synchronized profiles' },
+          { value: 'selected', label: 'Choose profiles' }
+        ]}
+        className="self-start"
+      />
+      {scope === 'selected' && (
+        <div className="flex flex-col rounded-md border border-line">
+          <label className="flex items-center gap-3 border-b border-line px-3 py-2 text-sm text-fg">
+            <Checkbox checked={allChecked} indeterminate={ids.length > 0 && !allChecked} onChange={(on) => onChange({ profileIds: on ? list.map((p) => p.id) : [] })} aria-label="Select all profiles" disabled={list.length === 0} />
+            <span className="flex-1">Select all</span>
+            <span className="tabular text-xs text-fg-subtle">
+              {list.filter((p) => ids.includes(p.id)).length} of {list.length}
+            </span>
+          </label>
+          <ul className="max-h-56 overflow-y-auto" aria-label="Profiles">
+            {list.map((p) => {
+              const reason = ids.includes(p.id) ? reasonOf(p.id) : null
+              return (
+                <li key={p.id} className="flex items-center gap-3 px-3 py-1.5 hover:bg-surface-3">
+                  <Checkbox checked={ids.includes(p.id)} onChange={(on) => onChange({ profileIds: on ? [...new Set([...ids, p.id])] : ids.filter((x) => x !== p.id) })} aria-label={`Use profile ${p.name}`} />
+                  <span className="min-w-0 flex-1 truncate text-sm text-fg">{p.name}</span>
+                  {reason && <span className="text-xs text-warning">{reason}</span>}
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Saved comments (Create Post → Bulk comments), in the order chosen. Select all picks the unused ones shown. */
+function CommentPicker({ value, onChange }: { value: string[]; onChange: (ids: string[]) => void }) {
+  const navigate = useNavigate()
+  const comments = useComments()
+  const [query, setQuery] = useState('')
+  const list = comments.data ?? []
+  const shown = list.filter((c) => !query.trim() || c.body.toLowerCase().includes(query.trim().toLowerCase()))
+  const selectable = shown.filter((c) => !c.usedAt || value.includes(c.id))
+  const shownSelected = shown.filter((c) => value.includes(c.id)).length
+  const allShown = selectable.length > 0 && selectable.every((c) => value.includes(c.id))
+  const missing = value.filter((id) => !list.some((c) => c.id === id)).length
+  if (comments.data && list.length === 0) {
+    return (
+      <div className="flex flex-col items-start gap-3 rounded-md border border-dashed border-line-strong px-4 py-5">
+        <p className="text-sm text-fg-muted">No saved comments yet. Paste a list of comments in Create Post → Bulk comments, or write one comment below.</p>
+        <Button icon={MessagesSquare} onClick={() => navigate(`${NAV_ITEMS.create.path}?mode=comments`)}>
+          Add comments
+        </Button>
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-line" aria-label="Saved comments" role="group">
+      <p className="px-3 pt-2 text-xs text-fg-subtle">
+        {list.length} saved {list.length === 1 ? 'comment' : 'comments'} · one comment per post: a comment’s own target first, then the selected posts in order
+      </p>
+      <div className="border-b border-line px-3 py-2">
+        <SearchField value={query} onChange={setQuery} placeholder="Search comments" size="sm" />
+      </div>
+      <label className="flex items-center gap-3 border-b border-line px-3 py-2 text-sm text-fg">
+        <Checkbox
+          checked={allShown}
+          indeterminate={shownSelected > 0 && !allShown}
+          onChange={(on) => onChange(on ? [...value, ...selectable.map((c) => c.id).filter((id) => !value.includes(id))] : value.filter((id) => !shown.some((c) => c.id === id)))}
+          aria-label="Select all comments"
+          disabled={selectable.length === 0}
+        />
+        <span className="flex-1">Select all{query.trim() ? ' matching' : ''} (not yet used)</span>
+        <span className="tabular text-xs text-fg-subtle">
+          {shownSelected} of {shown.length}
+        </span>
+      </label>
+      <ul className="max-h-64 overflow-y-auto" aria-label="Comments">
+        {shown.map((c) => {
+          const order = value.indexOf(c.id)
+          return (
+            <li key={c.id} className="flex items-start gap-3 px-3 py-2 hover:bg-surface-3">
+              <Checkbox checked={order >= 0} onChange={(on) => onChange(on ? [...value.filter((x) => x !== c.id), c.id] : value.filter((x) => x !== c.id))} aria-label={`Use comment: ${c.body.slice(0, 80)}`} />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="line-clamp-2 text-sm text-fg">{c.body}</span>
+                <span className="truncate text-xs text-fg-subtle">
+                  {c.targetUrl ? `Target: ${c.targetUrl.replace('https://x.com/', '')}` : 'No target — goes on a selected post'}
+                  {c.usedAt ? ' · used before' : ''}
+                </span>
+              </span>
+              {order >= 0 && <span className="tabular w-6 shrink-0 text-right text-xs text-accent-text">{order + 1}</span>}
+            </li>
+          )
+        })}
+      </ul>
+      <p className="px-3 pb-2 text-xs text-fg-subtle" aria-live="polite">
+        {value.length} {value.length === 1 ? 'comment' : 'comments'} selected{missing > 0 ? ` · ${missing} no longer available` : ''}
+      </p>
+    </div>
   )
 }
 

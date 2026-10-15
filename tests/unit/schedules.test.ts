@@ -15,7 +15,7 @@ const errOf = async (fn: () => unknown) => { try { await fn(); return 'none' } c
 const file = process.argv[2]!
 rmSync(file, { force: true })
 const db = new SqliteDatabase(file).open()
-check('migrate → v15', migrate(db, log as never) === 15)
+check('migrate → v16', migrate(db, log as never) === 16)
 check('automation_schedules table and run/item columns exist', db.all<{ name: string }>("SELECT name FROM pragma_table_info('automation_runs')").some((c) => c.name === 'schedule_id') && db.all<{ name: string }>("SELECT name FROM pragma_table_info('run_items')").some((c) => c.name === 'source_draft_id'))
 
 // A Monday, 2026-10-12, at 08:00 local time; the clock is moved by the test.

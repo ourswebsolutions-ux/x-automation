@@ -31,7 +31,7 @@ const errOf = async (p: Promise<unknown> | (() => unknown)) => { try { await (ty
 const file = process.argv[2]!
 rmSync(file, { force: true })
 const db = new SqliteDatabase(file).open()
-check('migrate → v15', migrate(db, log as never) === 15)
+check('migrate → v16', migrate(db, log as never) === 16)
 const at = new Date().toISOString()
 db.exec(`INSERT INTO browser_profiles (id, external_id, name, synced_at, first_seen_at, availability, run_state) VALUES
   ('aaaaaaaa-0000-4000-8000-000000000001','1','Alpha','${at}','${at}','available','closed'),('aaaaaaaa-0000-4000-8000-000000000002','2','Beta','${at}','${at}','available','closed'),('aaaaaaaa-0000-4000-8000-000000000003','3','Gamma','${at}','${at}','unavailable','closed'),('aaaaaaaa-0000-4000-8000-000000000004','4','Delta','${at}','${at}','available','closed')`)

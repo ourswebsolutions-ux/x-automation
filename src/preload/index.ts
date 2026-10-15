@@ -282,7 +282,14 @@ const api: RelayApi = {
     list: () => invoke(IpcChannel.DraftsList),
     save: (input) => invoke(IpcChannel.DraftsSave, input),
     duplicate: (id) => invoke(IpcChannel.DraftsDuplicate, id),
-    remove: (id) => invoke(IpcChannel.DraftsRemove, id)
+    remove: (id) => invoke(IpcChannel.DraftsRemove, id),
+    saveMany: (input) => invoke(IpcChannel.DraftsSaveMany, input)
+  },
+  comments: {
+    list: () => invoke(IpcChannel.CommentsList),
+    saveMany: (input) => invoke(IpcChannel.CommentsSaveMany, input),
+    update: (id, patch) => invoke(IpcChannel.CommentsUpdate, { id, patch }),
+    remove: (id) => invoke(IpcChannel.CommentsRemove, id)
   },
   generator: {
     generate: (brief, options) => invoke(IpcChannel.GeneratorGenerate, { brief, options }),
