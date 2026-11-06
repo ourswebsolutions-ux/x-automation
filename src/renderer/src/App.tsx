@@ -5,8 +5,10 @@ import { RESTORED_FLAG } from '@/pages/settings/BackupSection'
 import { useAsync } from '@/hooks/useAsync'
 import { hasBridge, relay } from '@/lib/bridge'
 import { BrandMark } from '@/layout/BrandMark'
+import { SecurityGate } from '@/security/SecurityGate'
 import { NotificationsProvider } from '@/state/notifications'
 import { PreferencesProvider } from '@/state/preferences'
+import { SubscriptionProvider } from '@/state/subscription'
 import { SystemProvider } from '@/state/system'
 import { UiProvider } from '@/state/ui'
 import { router } from '@/app/router'
@@ -51,13 +53,17 @@ function Bootstrap() {
 
   return (
     <PreferencesProvider initial={preferences.data}>
-      <SystemProvider>
-        <NotificationsProvider>
-          <UiProvider>
-            <RouterProvider router={router} />
-          </UiProvider>
-        </NotificationsProvider>
-      </SystemProvider>
+      <SecurityGate>
+        <SubscriptionProvider>
+          <SystemProvider>
+            <NotificationsProvider>
+              <UiProvider>
+                <RouterProvider router={router} />
+              </UiProvider>
+            </NotificationsProvider>
+          </SystemProvider>
+        </SubscriptionProvider>
+      </SecurityGate>
     </PreferencesProvider>
   )
 }

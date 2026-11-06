@@ -1,4 +1,4 @@
-import { app, session, shell } from 'electron'
+import { app, session, shell, type WebContents } from 'electron'
 import type { ScopedLogger } from '../services/logging/logger'
 import { isSafeExternalUrl, isTrustedRendererUrl } from './trust'
 
@@ -7,8 +7,15 @@ import { isSafeExternalUrl, isTrustedRendererUrl } from './trust'
  *  - no navigation away from the app
  *  - new windows denied (https links open in the system browser)
  *  - <webview> disabled
- *  - all permission requests (camera, notifications, etc.) denied
+ *  - all permission requests (camera, notifications, etc.) denied, except
+ *    our own renderer writing to the clipboard (the app's Copy buttons)
  */
+const CLIPBOARD_WRITE = 'clipboard-sanitized-write'
+
+function isOwnClipboardWrite(contents: WebContents | null, permission: string): boolean {
+  return permission === CLIPBOARD_WRITE && contents !== null && isTrustedRendererUrl(contents.getURL())
+}
+
 export function applySecurityHardening(log: ScopedLogger): void {
   app.on('web-contents-created', (_event, contents) => {
     contents.on('will-navigate', (event, url) => {
@@ -30,9 +37,10 @@ export function applySecurityHardening(log: ScopedLogger): void {
     })
   })
 
-  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => {
-    log.warn(`Denied permission request: ${permission}`)
-    callback(false)
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback) => {
+    const allowed = isOwnClipboardWrite(contents, permission)
+    if (!allowed) log.warn(`Denied permission request: ${permission}`)
+    callback(allowed)
   })
-  session.defaultSession.setPermissionCheckHandler(() => false)
+  session.defaultSession.setPermissionCheckHandler((contents, permission) => isOwnClipboardWrite(contents, permission))
 }

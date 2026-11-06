@@ -189,6 +189,16 @@ export const IpcChannel = {
   EngagementGetSettings: 'engagement:get-settings',
   EngagementUpdateSettings: 'engagement:update-settings',
   NoticesReady: 'notices:ready',
+  PinStatus: 'pin:status',
+  PinSetup: 'pin:setup',
+  PinVerify: 'pin:verify',
+  PinChange: 'pin:change',
+  PinRecover: 'pin:recover',
+  SubscriptionStatus: 'subscription:status',
+  SubscriptionPlans: 'subscription:plans',
+  SubscriptionRequestOtp: 'subscription:request-otp',
+  SubscriptionVerifyOtp: 'subscription:verify-otp',
+  SubscriptionRefresh: 'subscription:refresh',
   ShellOpenExternal: 'shell:open-external'
 } as const
 
@@ -211,7 +221,9 @@ export const IpcEvent = {
   /** Open a route (e.g. after a desktop notification was clicked). */
   Navigate: 'event:navigate',
   /** The application-update status changed. */
-  UpdatesChanged: 'event:updates-changed'
+  UpdatesChanged: 'event:updates-changed',
+  /** The PIN or subscription state changed. */
+  AccessChanged: 'event:access-changed'
 } as const
 
 export type IpcEventName = (typeof IpcEvent)[keyof typeof IpcEvent]
@@ -223,6 +235,8 @@ export interface IpcError {
   code:
     | 'VALIDATION'
     | 'FORBIDDEN'
+    | 'LOCKED'
+    | 'SUBSCRIPTION_REQUIRED'
     | 'NOT_IMPLEMENTED'
     | 'NOT_FOUND'
     | 'CONFLICT'

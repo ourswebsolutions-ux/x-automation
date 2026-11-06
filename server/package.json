@@ -1,0 +1,21 @@
+{
+  "name": "x-auto-activation-server",
+  "version": "1.0.0",
+  "description": "X Auto activation backend: OTP issuing, subscriptions and signed entitlements.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node src/index.mjs",
+    "start:staging": "node src/index.mjs --env=.env.staging",
+    "keys": "node src/keygen.mjs",
+    "admin": "node src/admin.mjs",
+    "admin:staging": "node src/admin.mjs --env=.env.staging",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "nodemailer": "10.3.1"
+  }
+}

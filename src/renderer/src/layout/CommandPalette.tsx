@@ -33,7 +33,8 @@ const SETTINGS_SECTIONS: { id: SettingsSectionId; label: string; keywords: strin
   { id: 'proxies', label: 'Proxies', keywords: 'proxy default socks http' },
   { id: 'usage', label: 'Usage & costs', keywords: 'tokens cost spend limits rates requests' },
   { id: 'backup', label: 'Backup & restore', keywords: 'export import recovery restore automatic' },
-  { id: 'security', label: 'Security & app info', keywords: 'isolation sandbox credentials encryption keys vault version about diagnostics database' }
+  { id: 'subscription', label: 'Subscription', keywords: 'activation activate plan license renew otp device' },
+  { id: 'security', label: 'Security & app info', keywords: 'pin lock isolation sandbox credentials encryption keys vault version about diagnostics database' }
 ]
 
 /** Scores an item: prefix match > word match > substring > subsequence. */

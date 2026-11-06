@@ -95,11 +95,11 @@ export const NAV_GROUPS: NavGroup[] = [
 /** Navigation order used for Ctrl+1…9 shortcuts. */
 export const NAV_ORDER: NavItem[] = [...NAV_GROUPS.flatMap((group) => group.items), NAV_ITEMS.settings]
 
-export type SettingsSectionId = 'general' | 'appearance' | 'notifications' | 'automation' | 'ai' | 'ixbrowser' | 'proxies' | 'usage' | 'backup' | 'security'
+export type SettingsSectionId = 'general' | 'appearance' | 'notifications' | 'automation' | 'ai' | 'ixbrowser' | 'proxies' | 'usage' | 'backup' | 'subscription' | 'security'
 
 /** Sections that were merged keep working as links. */
 const SETTINGS_ALIASES: Record<string, SettingsSectionId> = { publishing: 'automation', providers: 'ai', image: 'ai', database: 'security', about: 'security' }
-const SETTINGS_IDS: SettingsSectionId[] = ['general', 'appearance', 'notifications', 'automation', 'ai', 'ixbrowser', 'proxies', 'usage', 'backup', 'security']
+const SETTINGS_IDS: SettingsSectionId[] = ['general', 'appearance', 'notifications', 'automation', 'ai', 'ixbrowser', 'proxies', 'usage', 'backup', 'subscription', 'security']
 
 export function resolveSettingsSection(id: string | null): SettingsSectionId {
   if (!id) return 'general'

@@ -50,6 +50,7 @@ if (!app.requestSingleInstanceLock()) {
     current.scheduler.stop()
     current.automationSchedules.stop()
     current.updates.stop()
+    current.subscription.stop()
     const engineRunning = current.engine.status().state === 'ready' || current.engine.status().state === 'starting'
     if (!current.queue.isStarted && !engineRunning) {
       shutdownDone = true
@@ -107,6 +108,7 @@ const ASSET_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
  */
 function registerAssetProtocol(current: AppServices): void {
   protocol.handle('relay-asset', async (request) => {
+    if (!current.pin.isUnlocked) return new Response('Not found', { status: 404 })
     const url = new URL(request.url)
     const id = url.pathname.replace(/^\//, '')
     if (url.hostname !== 'asset' || !ASSET_ID.test(id)) return new Response('Not found', { status: 404 })
@@ -161,6 +163,7 @@ async function bootstrap(): Promise<void> {
       send(IpcEvent.PublishingChanged)
     }, 150)
   })
+  current.setAccessListener(() => send(IpcEvent.AccessChanged, { pin: current.pin.status(), subscription: current.subscription.status() }))
   current.notifier.attach((notice) => send(IpcEvent.Notice, notice))
   current.onUpdatesChanged(() => send(IpcEvent.UpdatesChanged, current.updates.get()))
   current.onNoticeClick((notice) => {
@@ -188,12 +191,9 @@ async function bootstrap(): Promise<void> {
   openWindow()
   log.success('Main window ready')
 
-  // Publishing: settle what the last shutdown left behind, then start working.
-  current.scheduler.prepare()
-  current.queue.start()
-  current.scheduler.start()
-  current.control.announceIfPaused()
-  current.runs.recover()
+  // Publishing starts once the PIN and the subscription both pass (see AccessController).
+  current.subscription.start()
+  await current.onAccessChange()
   // Recurring schedules are no longer offered (campaigns run once, at their run time); their records
   // are kept, but they don't start runs any more.
   current.backup.startSchedule()

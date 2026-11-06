@@ -61,7 +61,7 @@ cleanups.push(() => server.close())
 async function launch(extraEnv) {
   const home = mkdtempSync(join(tmpdir(), 'axora-upd-e2e-'))
   cleanups.push(() => rmSync(home, { recursive: true, force: true }))
-  const env = { ...process.env, XDG_CONFIG_HOME: home, ...extraEnv }
+  const env = { ...process.env, XDG_CONFIG_HOME: home, AXORA_TEST_SKIP_SECURITY: '1', ...extraEnv }
   delete env.ELECTRON_RUN_AS_NODE
   const app = await electron.launch({ executablePath: electronPath, args: ['--disable-backgrounding-occluded-windows', project], env, cwd: project })
   const page = await app.firstWindow()

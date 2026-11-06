@@ -3,6 +3,8 @@ import { z } from 'zod'
 import type { IpcChannelName, IpcError, IpcResult } from '@shared/ipc/channels'
 import { CredentialUnavailableError } from '../services/credentials/credentialVault'
 import { DatabaseError } from '../services/database/driver'
+import { AccessDeniedError } from '../services/security/accessController'
+import { ActivationUnavailableError } from '../services/security/subscriptionService'
 import { ConflictError, NotFoundError, NotImplementedError, ValidationError } from '../services/errors'
 import { AiServiceError } from '../services/ai/errors'
 import { EngineError } from '../services/engine/engineService'
@@ -16,6 +18,8 @@ function toIpcError(error: unknown): IpcError {
   if (error instanceof z.ZodError) {
     return { code: 'VALIDATION', message: error.issues.map((issue) => issue.message).join('; ') }
   }
+  if (error instanceof AccessDeniedError) return { code: error.code, message: error.message }
+  if (error instanceof ActivationUnavailableError) return { code: 'UNAVAILABLE', message: error.message }
   // These messages are written for users and never contain secrets.
   if (error instanceof ValidationError) return { code: 'VALIDATION', message: error.message }
   if (error instanceof NotFoundError) return { code: 'NOT_FOUND', message: error.message }
@@ -41,10 +45,11 @@ function toIpcError(error: unknown): IpcError {
 /**
  * Registers an invoke handler that:
  *  1. rejects calls from frames that are not our renderer,
- *  2. validates the payload against a schema,
- *  3. wraps the result (or error) in an IpcResult envelope.
+ *  2. applies the access guard (PIN, subscription),
+ *  3. validates the payload against a schema,
+ *  4. wraps the result (or error) in an IpcResult envelope.
  */
-export function createIpcRouter(log: ScopedLogger) {
+export function createIpcRouter(log: ScopedLogger, guard: (channel: IpcChannelName) => void) {
   return function handle<S extends z.ZodType, R>(channel: IpcChannelName, schema: S, handler: Handler<S, R>): void {
     ipcMain.handle(channel, async (event, payload: unknown): Promise<IpcResult<Awaited<R>>> => {
       const senderUrl = event.senderFrame?.url ?? ''
@@ -54,6 +59,7 @@ export function createIpcRouter(log: ScopedLogger) {
       }
 
       try {
+        guard(channel)
         const input = schema.parse(payload)
         return { ok: true, data: await handler(input, event) }
       } catch (error) {

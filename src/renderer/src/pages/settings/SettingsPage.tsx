@@ -1,4 +1,4 @@
-import { ArchiveRestore, Bell, Bot, Cpu, Gauge, Globe, Paintbrush, Shield, ShieldCheck, SlidersHorizontal, type LucideIcon } from 'lucide-react'
+import { ArchiveRestore, BadgeCheck, Bell, Bot, Cpu, Gauge, Globe, Paintbrush, Shield, ShieldCheck, SlidersHorizontal, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { PageHeader } from '@/components/ui'
@@ -13,6 +13,7 @@ import { ImageSection } from './ImageSection'
 import { IxBrowserSection } from './IxBrowserSection'
 import { NotificationsSection } from './NotificationsSection'
 import { ProxySettingsSection } from './ProxySettingsSection'
+import { SubscriptionSection } from './SubscriptionSection'
 import { SystemSection } from './SystemSection'
 import { UsageSection } from './UsageSection'
 
@@ -60,7 +61,10 @@ const GROUPS: { label: string; sections: Section[] }[] = [
   },
   {
     label: 'System',
-    sections: [{ id: 'security', label: 'Security & app info', icon: ShieldCheck, render: () => <SystemSection /> }]
+    sections: [
+      { id: 'subscription', label: 'Subscription', icon: BadgeCheck, render: () => <SubscriptionSection /> },
+      { id: 'security', label: 'Security & app info', icon: ShieldCheck, render: () => <SystemSection /> }
+    ]
   }
 ]
 

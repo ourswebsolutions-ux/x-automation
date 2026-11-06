@@ -123,7 +123,21 @@ jobs:
       - name: Engine tests (bundled Python, real Chrome)
         run: npm run engine:test
 
+      # Without this address an installed copy can't activate, so a release must not ship without it.
+      - name: Check the activation server address
+        if: env.TAG != ''
+        shell: bash
+        env:
+          XAUTO_ACTIVATION_URL: ${{ vars.XAUTO_ACTIVATION_URL }}
+        run: |
+          case "$XAUTO_ACTIVATION_URL" in
+            https://*) ;;
+            *) echo "::error::Set the XAUTO_ACTIVATION_URL repository variable to the activation server's https:// address (docs/security.md)"; exit 1 ;;
+          esac
+
       - name: Build the app
+        env:
+          XAUTO_ACTIVATION_URL: ${{ vars.XAUTO_ACTIVATION_URL }}
         run: npx electron-vite build
 
       - name: Package installers

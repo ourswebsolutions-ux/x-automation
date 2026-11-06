@@ -304,6 +304,21 @@ const api: RelayApi = {
     export: (format) => invoke(IpcChannel.LogsExport, format),
     onAppend: (listener) => subscribe(IpcEvent.LogAppended, listener)
   },
+  pin: {
+    status: () => invoke(IpcChannel.PinStatus),
+    setup: (pin) => invoke(IpcChannel.PinSetup, pin),
+    verify: (pin) => invoke(IpcChannel.PinVerify, pin),
+    change: (current, next) => invoke(IpcChannel.PinChange, { current, next }),
+    recover: (recoveryCode, next) => invoke(IpcChannel.PinRecover, { recoveryCode, next })
+  },
+  subscription: {
+    status: () => invoke(IpcChannel.SubscriptionStatus),
+    plans: () => invoke(IpcChannel.SubscriptionPlans),
+    requestOtp: (plan) => invoke(IpcChannel.SubscriptionRequestOtp, plan),
+    verifyOtp: (plan, otp) => invoke(IpcChannel.SubscriptionVerifyOtp, { plan, otp }),
+    refresh: () => invoke(IpcChannel.SubscriptionRefresh),
+    onAccessChange: (listener) => subscribe(IpcEvent.AccessChanged, listener)
+  },
   shell: {
     openExternal: (url) => invoke(IpcChannel.ShellOpenExternal, url)
   }

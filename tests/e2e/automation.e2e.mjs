@@ -78,7 +78,7 @@ cleanups.push(() => ai.close())
 ai.state.unique = true
 
 async function launch() {
-  const env = { ...process.env, XDG_CONFIG_HOME: home, AXORA_TEST_X_BASE_URL: fxBase, AXORA_TEST_QUEUE_BACKOFF_MS: '400' }
+  const env = { ...process.env, XDG_CONFIG_HOME: home, AXORA_TEST_X_BASE_URL: fxBase, AXORA_TEST_QUEUE_BACKOFF_MS: '400', AXORA_TEST_SKIP_SECURITY: '1' }
   delete env.ELECTRON_RUN_AS_NODE
   // --user-data-dir keeps the test away from a real installation's data on every OS (XDG_CONFIG_HOME only covers Linux).
   const a = await electron.launch({ executablePath: electronPath, args: [`--user-data-dir=${join(home, 'user-data')}`, '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', project], env, cwd: project })

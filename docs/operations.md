@@ -50,6 +50,11 @@ costs** · **Backup & restore**. System: **Security & app info** (isolation, key
 compact, diagnostics file, version). Old links (`?section=providers`, `database`, `image`, `about`,
 `publishing`) open the section they were merged into. No X API key is ever asked for.
 
+## Security and subscription
+
+The 4-digit PIN and the subscription are separate layers: see [security.md](security.md). The activation
+backend and its administrator commands are in [server/README.md](../server/README.md).
+
 ## Usage & costs
 
 - Every recorded AI request (`ai_usage`): provider, model, request type, time, outcome, tokens and

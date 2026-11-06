@@ -4,6 +4,7 @@ import { Button, ConfirmDialog, ErrorState, SettingsSection, Skeleton, StatusBad
 import { useCredentialStatus } from '@/data/providers'
 import { errorMessage, relay } from '@/lib/bridge'
 import { useSystem } from '@/state/system'
+import { PinSection } from './PinSection'
 
 function Row({ label, description, value }: { label: string; description: string; value: ReactNode }) {
   return (
@@ -47,6 +48,7 @@ export function SecuritySection() {
 
   return (
     <>
+      <PinSection />
       <SettingsSection title="Renderer isolation" description="How this window is separated from your system. Values are read from the running app.">
         {security.status === 'error' ? (
           <ErrorState size="sm" error={security.error} onRetry={security.reload} />

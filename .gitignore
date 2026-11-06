@@ -13,3 +13,6 @@ Thumbs.db
 engine-runtime/
 __pycache__/
 *.pyc
+
+# Activation server: secrets live in server/.env (ignored above), customer data here
+server/data/

@@ -11,6 +11,7 @@ import { NoticeBridge } from './NoticeBridge'
 import { ShortcutsDialog } from './ShortcutsDialog'
 import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'
+import { SubscriptionBanner } from './SubscriptionBanner'
 import { TitleBar } from './TitleBar'
 
 /** Below this width the sidebar collapses automatically. */
@@ -70,6 +71,7 @@ export function AppShell() {
           <div ref={scrollRef} className="@container h-full overflow-y-auto">
             <div key={pathname} className="mx-auto w-full max-w-[1320px] px-6 pb-12 pt-6 animate-rise @3xl:px-8 @3xl:pt-7">
               <ErrorBoundary resetKey={pathname}>
+                <SubscriptionBanner />
                 <Outlet />
               </ErrorBoundary>
             </div>

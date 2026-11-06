@@ -58,6 +58,7 @@ import type {
   TaskView
 } from '../types/publishing'
 import type { CompatibilityResult, EngineSelfCheck, EngineStatus } from '../types/engine'
+import type { AccessSnapshot, OtpRequestResult, PinSetupResult, PinStatus, PinVerifyResult, PlanId, SubscriptionPlan, SubscriptionStatus } from '../types/security'
 import type { Proxy, ProxyAssignment, ProxyExportResult, ProxyImportResult, ProxyInput, ProxyTest } from '../types/proxies'
 import type {
   AssetQuery,
@@ -436,6 +437,23 @@ export interface RelayApi {
     /** Opens a save dialog and writes a sanitized export. */
     export(format: 'text' | 'json'): Promise<FileExportResult>
     onAppend(listener: (entry: LogEntry) => void): Unsubscribe
+  }
+  /** The app lock. Separate from the subscription. */
+  pin: {
+    status(): Promise<PinStatus>
+    setup(pin: string): Promise<PinSetupResult>
+    verify(pin: string): Promise<PinVerifyResult>
+    change(current: string, next: string): Promise<PinVerifyResult>
+    recover(recoveryCode: string, next: string): Promise<PinSetupResult>
+  }
+  /** Activation. Separate from the PIN. The OTP goes to the administrator, never to this app. */
+  subscription: {
+    status(): Promise<SubscriptionStatus>
+    plans(): Promise<SubscriptionPlan[]>
+    requestOtp(plan: PlanId): Promise<OtpRequestResult>
+    verifyOtp(plan: PlanId, otp: string): Promise<SubscriptionStatus>
+    refresh(): Promise<SubscriptionStatus>
+    onAccessChange(listener: (snapshot: AccessSnapshot) => void): Unsubscribe
   }
   shell: {
     /** Opens an https:// URL in the default browser. Other schemes are rejected. */

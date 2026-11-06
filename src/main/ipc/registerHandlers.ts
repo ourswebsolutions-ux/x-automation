@@ -11,6 +11,7 @@ import type { AutomationConfig } from '@shared/types/automation'
 import { automationConfigSchema } from '../services/automation/configSchema'
 import { MODEL_PATTERN } from '@shared/config/providers'
 import { IpcChannel } from '@shared/ipc/channels'
+import { PLAN_IDS } from '@shared/types/security'
 import type { AppInfo, SecurityPosture, WindowState } from '@shared/types/system'
 import type { AppServices } from '../services/container'
 import { AiServiceError } from '../services/ai/errors'
@@ -58,13 +59,15 @@ const providerInput = z
       .optional()
   })
   .strict()
+const pin = z.string().regex(/^\d{4}$/, 'The PIN must be exactly 4 digits.')
+const planId = z.enum(PLAN_IDS)
 const logLevel = z.enum(['debug', 'info', 'success', 'warning', 'error'])
 
 const windowOf = (event: IpcMainInvokeEvent) => BrowserWindow.fromWebContents(event.sender)
 
 export function registerIpcHandlers(services: AppServices, getWindow: () => BrowserWindow | null): void {
   const log = services.logger.scope('ipc')
-  const handle = createIpcRouter(log)
+  const handle = createIpcRouter(log, (channel) => services.access.guard(channel))
   const { preferences, providers, database, backup, logger } = services
 
   const withWindow = (action: (window: BrowserWindow) => void) => () => {
@@ -80,6 +83,32 @@ export function registerIpcHandlers(services: AppServices, getWindow: () => Brow
     const window = getWindow()
     return window ? windowState(window) : { isMaximized: false, isFocused: true }
   })
+
+  // App lock
+  handle(IpcChannel.PinStatus, noPayload, () => services.pin.status())
+  handle(IpcChannel.PinSetup, pin, async (value) => {
+    const result = await services.pin.setup(value)
+    await services.onAccessChange()
+    return result
+  })
+  handle(IpcChannel.PinVerify, pin, async (value) => {
+    const result = await services.pin.verify(value)
+    await services.onAccessChange()
+    return result
+  })
+  handle(IpcChannel.PinChange, z.object({ current: pin, next: pin }).strict(), ({ current, next }) => services.pin.change(current, next))
+  handle(IpcChannel.PinRecover, z.object({ recoveryCode: z.string().min(1).max(64), next: pin }).strict(), async ({ recoveryCode, next }) => {
+    const result = await services.pin.recover(recoveryCode, next)
+    await services.onAccessChange()
+    return result
+  })
+
+  // Subscription
+  handle(IpcChannel.SubscriptionStatus, noPayload, () => services.subscription.status())
+  handle(IpcChannel.SubscriptionPlans, noPayload, () => services.subscription.plans())
+  handle(IpcChannel.SubscriptionRequestOtp, planId, (plan) => services.subscription.requestOtp(plan))
+  handle(IpcChannel.SubscriptionVerifyOtp, z.object({ plan: planId, otp: z.string().regex(/^\d{6}$/, 'The code has 6 digits.') }).strict(), ({ plan, otp }) => services.subscription.verifyOtp(plan, otp))
+  handle(IpcChannel.SubscriptionRefresh, noPayload, () => services.subscription.refresh())
 
   // App information
   handle(

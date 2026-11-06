@@ -1,4 +1,4 @@
-import { app, Notification, shell } from 'electron'
+import { app, net, Notification, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { UpdateService } from './updates/updateService'
@@ -52,8 +52,23 @@ import { AutomationControlService } from './automation/controlService'
 import { UsageService } from './usage/usageService'
 import { AutomationScheduleService } from './automation/scheduleService'
 import { RunService } from './automation/runService'
+import { AccessController } from './security/accessController'
+import { loadDeviceIdentity } from './security/deviceIdentity'
+import { activationEndpoint, activationPublicKey } from './security/endpoint'
+import { PinService } from './security/pinService'
+import { SubscriptionService } from './security/subscriptionService'
 
 export interface AppServices {
+  /** The app lock. */
+  pin: PinService
+  /** Activation and the signed lease from the activation server. */
+  subscription: SubscriptionService
+  /** Enforces both, for IPC and for background automation. */
+  access: AccessController
+  /** Re-evaluates access and tells the window. */
+  onAccessChange: () => Promise<void>
+  /** Wired to the window by the main entry. */
+  setAccessListener: (listener: () => void) => void
   logger: Logger
   database: DatabaseService
   repositories: WorkspaceRepositories
@@ -385,7 +400,59 @@ export async function createServices(): Promise<AppServices> {
     onChange: () => updatesListeners.forEach((listener) => listener())
   })
 
+  // The PIN and the subscription know nothing of each other; only the access controller sees both.
+  // Tests of unrelated features skip both, and only in a development build.
+  const bypassSecurity = !app.isPackaged && process.env.AXORA_TEST_SKIP_SECURITY === '1'
+  const securityDir = join(userData, 'security')
+  const pin = new PinService({ filePath: join(securityDir, 'pin.json'), log: logger.scope('pin'), bypass: bypassSecurity })
+  let accessListener: () => void = () => undefined
+  const subscription = new SubscriptionService({
+    filePath: join(securityDir, 'subscription.json'),
+    identity: await loadDeviceIdentity(process.platform, join(securityDir, 'device.id'), logger.scope('subscription')),
+    publicKey: activationPublicKey(app.isPackaged, process.env),
+    baseUrl: activationEndpoint(app.isPackaged, process.env),
+    fetch: (url, init) => net.fetch(url, init),
+    log: logger.scope('subscription'),
+    bypass: bypassSecurity,
+    onChange: () => void onAccessChange()
+  })
+  let recovered = false
+  const access: AccessController = new AccessController({
+    pin,
+    subscription,
+    log: logger.scope('access'),
+    startAutomation: () => {
+      scheduler.prepare()
+      queue.start()
+      scheduler.start()
+      if (recovered) return
+      recovered = true
+      control.announceIfPaused()
+      runs.recover()
+    },
+    stopAutomation: async () => {
+      scheduler.stop()
+      automationSchedules.stop()
+      const run = runs.active()
+      if (run?.status === 'generating') runs.pause(run.id)
+      await queue.stop()
+      const state = engine.status().state
+      if (state === 'ready' || state === 'starting') await engine.stop('access ended')
+    }
+  })
+  const onAccessChange = async () => {
+    await access.sync()
+    accessListener()
+  }
+
   return {
+    pin,
+    subscription,
+    access,
+    onAccessChange,
+    setAccessListener: (listener) => {
+      accessListener = listener
+    },
     logger,
     database,
     repositories,
@@ -408,6 +475,7 @@ export async function createServices(): Promise<AppServices> {
       },
       afterRestore: () => {
         queue.reloadState()
+        if (!access.automationRunning) return
         scheduler.prepare()
         queue.start()
         scheduler.start()

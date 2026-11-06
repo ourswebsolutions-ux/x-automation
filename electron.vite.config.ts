@@ -36,7 +36,9 @@ function contentSecurityPolicy(): Plugin {
 
 export default defineConfig({
   main: {
-    resolve: { alias: { '@shared': shared } }
+    resolve: { alias: { '@shared': shared } },
+    // The activation server's public address. Not a secret; prices and keys stay on that server.
+    define: { __ACTIVATION_URL__: JSON.stringify(process.env.XAUTO_ACTIVATION_URL ?? '') }
   },
   preload: {
     resolve: { alias: { '@shared': shared } },
