@@ -123,7 +123,8 @@ jobs:
       - name: Engine tests (bundled Python, real Chrome)
         run: npm run engine:test
 
-      # Without this address an installed copy can't activate, so a release must not ship without it.
+      # Without this address an installed copy can't activate. Empty is allowed while the production
+      # server is pending, and is flagged on the run; an address that isn't https is always a mistake.
       - name: Check the activation server address
         if: env.TAG != ''
         shell: bash
@@ -132,7 +133,8 @@ jobs:
         run: |
           case "$XAUTO_ACTIVATION_URL" in
             https://*) ;;
-            *) echo "::error::Set the XAUTO_ACTIVATION_URL repository variable to the activation server's https:// address (docs/security.md)"; exit 1 ;;
+            '') echo "::warning::XAUTO_ACTIVATION_URL is not set: this build can't activate subscriptions (docs/security.md)" ;;
+            *) echo "::error::XAUTO_ACTIVATION_URL must be an https:// address (docs/security.md)"; exit 1 ;;
           esac
 
       - name: Build the app

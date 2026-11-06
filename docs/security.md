@@ -73,9 +73,10 @@ The server address is built in from `XAUTO_ACTIVATION_URL` and must be `https://
 XAUTO_ACTIVATION_URL=https://activation.example.com npm run dist:win
 ```
 
-**A build without it can never activate**, and every customer on it loses premium features. The release
-workflow reads the `XAUTO_ACTIVATION_URL` repository variable and stops a tagged release when it is
-empty. Development builds default to `http://127.0.0.1:8787`.
+**A build without it can never activate**, and every customer who installs it loses premium features
+until they install a build that has it. The release workflow reads the `XAUTO_ACTIVATION_URL` repository
+variable. If it is empty the run shows a warning and continues; if it isn't `https://` the run stops.
+Development builds default to `http://127.0.0.1:8787`.
 
 Environment overrides (`XAUTO_ACTIVATION_URL`, `XAUTO_ACTIVATION_PUBLIC_KEY`, `AXORA_TEST_SKIP_SECURITY`)
 are ignored by installed builds.
