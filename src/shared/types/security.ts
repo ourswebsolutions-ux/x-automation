@@ -45,8 +45,13 @@ export interface SubscriptionStatus {
   /** null for Lifetime. */
   expiresAt: string | null
   lastCheckedAt: string | null
-  /** False when this build has no activation server address. */
+  /** False when there is no way to request an OTP here (no server, no email settings on this PC). */
   serviceConfigured: boolean
+  /**
+   * server: OTP through the activation server. email: OTP emailed from this PC (settings in its
+   * environment variables). codes: neither is set up; an administrator's activation code still works.
+   */
+  mode: 'server' | 'email' | 'codes'
 }
 
 export interface OtpRequestResult {

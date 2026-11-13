@@ -13,6 +13,7 @@ import { deriveIdentity } from '../../src/main/services/security/deviceIdentity'
 import { activationEndpoint, activationPublicKey } from '../../src/main/services/security/endpoint'
 import { PinService, PIN_ATTEMPTS } from '../../src/main/services/security/pinService'
 import { ActivationUnavailableError, SubscriptionService } from '../../src/main/services/security/subscriptionService'
+import { LocalOtpActivation, OTP_COOLDOWN_MS, OTP_TTL_MS, readLocalOtpConfig } from '../../src/main/services/security/localOtp'
 // @ts-expect-error plain JavaScript, tested by its own suite
 import { ActivationService } from '../../server/src/activation.mjs'
 // @ts-expect-error plain JavaScript
@@ -338,6 +339,102 @@ const DAY = 86_400_000
   now += 50 * 365 * DAY
   check('code: Lifetime still active fifty years later', make().isActive && make().status().expiresAt === null)
   check('endpoint: development can behave like a build without a server', activationEndpoint(false, { XAUTO_ACTIVATION_URL: 'none' }) === null)
+}
+
+// ── Email OTP with no server (settings from environment variables) ──
+{
+  check('email otp: off without settings', readLocalOtpConfig({}) === null && readLocalOtpConfig({ XAUTO_SMTP_USER: 'a@b.co', XAUTO_SMTP_PASS: 'x' }) === null)
+  check('email otp: only one admin address is accepted', readLocalOtpConfig({ XAUTO_SMTP_USER: 's@b.co', XAUTO_SMTP_PASS: 'x', XAUTO_ADMIN_EMAIL: 'a@b.co,c@d.co' }) === null)
+  const config = readLocalOtpConfig({ XAUTO_SMTP_USER: 'sender@example.com', XAUTO_SMTP_PASS: 'abcd efgh ijkl mnop', XAUTO_ADMIN_EMAIL: 'admin@example.com', XAUTO_PLAN_CURRENCY: 'PKR', XAUTO_PRICE_MONTHLY: '2000' })!
+  check('email otp: reads its settings from the environment', config.adminEmail === 'admin@example.com' && config.smtp.pass === 'abcdefghijklmnop' && config.smtp.host === 'smtp.gmail.com' && config.smtp.port === 465)
+
+  let now = Date.UTC(2026, 0, 15, 12)
+  const mails: { to: string; from: string; text: string }[] = []
+  let failSend = false
+  const identity = deriveIdentity('email-otp-pc')
+  const otpFile = join(dir, 'otp.json')
+  const subFile = join(dir, 'email-sub.json')
+  const otpOf = () => /OTP: (\d+)/.exec(mails.at(-1)!.text)![1]!
+  const make = () => {
+    const localOtp = new LocalOtpActivation({ filePath: otpFile, identity, config, log: log as never, now: () => now, send: async (to, from, message) => {
+      if (failSend) throw new Error('smtp down')
+      mails.push({ to, from, text: message.text })
+    } })
+    return new SubscriptionService({ filePath: subFile, identity, publicKey: ACTIVATION_PUBLIC_KEY, baseUrl: null, fetch: () => Promise.reject(new Error('no server')), log: log as never, now: () => now, onChange: () => undefined, localOtp })
+  }
+  let app = make()
+  check('email otp: mode is email, not activated', app.status().mode === 'email' && app.status().serviceConfigured && !app.isActive)
+  check('email otp: plans are the three, price only where set', (await app.plans()).map((p) => `${p.id}:${p.price}`).join() === 'monthly:2000,six_months:,lifetime:')
+  check('email otp: a code no one requested fails', (await errOf(app.verifyOtp('monthly', '123456'))).includes('not correct') && !app.isActive)
+
+  const requested = await app.requestOtp('monthly')
+  check('email otp: the reply holds only the expiry', Object.keys(requested).join() === 'expiresAt' && new Date(requested.expiresAt).getTime() === now + OTP_TTL_MS)
+  check('email otp: sent from the SMTP address to the admin address only', mails.length === 1 && mails[0]!.to === 'admin@example.com' && mails[0]!.from === 'sender@example.com')
+  const otp = otpOf()
+  check('email otp: the OTP is exactly 6 digits', /^\d{6}$/.test(otp))
+  check('email otp: the email has ID, plan, price, OTP and expiry', [identity.activationId, 'Plan: Monthly', 'PKR 2000', `OTP: ${otp}`, '12:10:00 UTC'].every((part) => mails[0]!.text.includes(part)))
+  check('email otp: the OTP is not stored in plain text', !readFileSync(otpFile, 'utf8').includes(otp))
+  const wrong = otp === '000000' ? '000001' : '000000'
+  check('email otp: a wrong code is refused', (await errOf(app.verifyOtp('monthly', wrong))).includes('not correct') && !app.isActive)
+  check('email otp: the right code for another plan is refused', (await errOf(app.verifyOtp('lifetime', otp))).includes('not correct') && !app.isActive)
+  app = make()
+  check('email otp: attempts survive a restart', JSON.parse(readFileSync(otpFile, 'utf8')).pending.attempts === 2)
+  const status = await app.verifyOtp('monthly', otp)
+  check('email otp: the right code activates the chosen plan at once', app.isActive && status.plan === 'monthly' && status.expiresAt === new Date(now + 30 * DAY).toISOString())
+  check('email otp: a used code is refused', (await errOf(app.verifyOtp('monthly', otp))).includes('already been used'))
+  check('email otp: activation survives a restart', make().isActive && make().status().plan === 'monthly')
+
+  const rec = JSON.parse(readFileSync(subFile, 'utf8'))
+  writeFileSync(subFile, JSON.stringify({ ...rec, local: { ...rec.local, plan: 'lifetime', expiresAt: null } }))
+  check('email otp: editing the saved activation turns it off', !make().isActive)
+  writeFileSync(subFile, JSON.stringify(rec))
+  check('email otp: the genuine record works again', make().isActive)
+
+  now += OTP_COOLDOWN_MS - 1000
+  check('email otp: one request per minute', (await errOf(make().requestOtp('six_months'))).includes('wait a minute'))
+  now += 1000
+  app = make()
+  await app.requestOtp('six_months')
+  const late = otpOf()
+  now += OTP_TTL_MS
+  check('email otp: refused after 10 minutes', (await errOf(app.verifyOtp('six_months', late))).includes('expired'))
+
+  await app.requestOtp('six_months')
+  const burned = otpOf()
+  for (let i = 0; i < 5; i++) await errOf(app.verifyOtp('six_months', burned === '000000' ? '000001' : '000000'))
+  check('email otp: five wrong attempts burn the code, even the right one after', (await errOf(app.verifyOtp('six_months', burned))).includes('Too many'))
+
+  now += OTP_COOLDOWN_MS
+  await app.requestOtp('six_months')
+  const replaced = otpOf()
+  now += OTP_COOLDOWN_MS
+  await app.requestOtp('six_months')
+  check('email otp: a new request cancels the previous code', replaced === otpOf() || (await errOf(app.verifyOtp('six_months', replaced))).includes('not correct'))
+  const renewal = await app.verifyOtp('six_months', otpOf())
+  check('email otp: renewing adds six months to the time left', renewal.plan === 'six_months' && renewal.expiresAt === new Date(Date.UTC(2026, 7, 14, 12)).toISOString())
+
+  now += 3_600_000
+  failSend = true
+  const before = mails.length
+  check('email otp: a failed email is reported and leaves no code', (await errOf(app.requestOtp('monthly'))).includes('could not be sent') && mails.length === before)
+  failSend = false
+  for (let i = 0; i < 4; i++) {
+    now += OTP_COOLDOWN_MS
+    await app.requestOtp('monthly')
+  }
+  now += OTP_COOLDOWN_MS
+  await app.requestOtp('monthly')
+  now += OTP_COOLDOWN_MS
+  check('email otp: at most 5 requests an hour', (await errOf(app.requestOtp('monthly'))).includes('Too many requests'))
+
+  now = Date.UTC(2026, 7, 14, 12)
+  check('email otp: the subscription ends when the plan does', !make().isActive && make().status().state === 'expired')
+  now += 2 * 3_600_000
+  await make().requestOtp('lifetime')
+  const life = await make().verifyOtp('lifetime', otpOf())
+  now += 40 * 365 * DAY
+  check('email otp: Lifetime never ends', life.expiresAt === null && make().isActive)
+  check('email otp: the window never receives the OTP or SMTP settings', !JSON.stringify(await make().plans()).includes('abcd') && !JSON.stringify(make().status()).includes('sender@'))
 }
 
 rmSync(dir, { recursive: true, force: true, maxRetries: 5 })

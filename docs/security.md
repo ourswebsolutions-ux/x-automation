@@ -65,6 +65,34 @@ Activate → server emails the administrator the OTP → administrator checks pa
 Prices and durations exist only on the server (`server/README.md`). The app shows what `/v1/plans`
 returns.
 
+## Email OTP without a server
+
+For use on your own PCs. Set these **Windows user environment variables** on each PC that runs X Auto
+(System → About → Advanced system settings → Environment Variables → User variables), then start
+X Auto again:
+
+| Variable | Value |
+| --- | --- |
+| `XAUTO_SMTP_USER` | The email account that sends (for Gmail: the address) |
+| `XAUTO_SMTP_PASS` | Its password (for Gmail: an app password) |
+| `XAUTO_ADMIN_EMAIL` | The one address that receives OTPs |
+| `XAUTO_SMTP_HOST`, `XAUTO_SMTP_PORT` | Optional; default `smtp.gmail.com`, `465` |
+| `XAUTO_PLAN_CURRENCY`, `XAUTO_PRICE_MONTHLY`, `XAUTO_PRICE_SIX_MONTHS`, `XAUTO_PRICE_LIFETIME` | Optional; shown on the plans and in the email |
+| `XAUTO_PLAN_MONTHLY_DAYS` | Optional; default 30 |
+
+Or in PowerShell: `[Environment]::SetEnvironmentVariable('XAUTO_SMTP_PASS', '…', 'User')`.
+
+When they are set and the build has no activation server, **Activate** emails a 6-digit OTP to
+`XAUTO_ADMIN_EMAIL` from `XAUTO_SMTP_USER`; the administrator gives it to the user, who enters it.
+The OTP expires after 10 minutes, works once, only for that Activation ID and plan, and five wrong
+attempts burn it; one request a minute, five an hour. Only a salted HMAC of it is kept
+(`security/otp.json`), and the activation is sealed in `security/subscription.json`.
+
+The settings are read by the main process from the environment only: they are never in the app's
+files, installer, window or logs. **The limits of having no server:** the SMTP password is on each PC
+that sends, and the check runs on the same PC as the user, so whoever controls that PC can read the
+password and get around the OTP. That is fine for your own PCs; for customers, use the server.
+
 ## Activation codes (no server)
 
 A build without `XAUTO_ACTIVATION_URL` has no activation server. Its Subscription page offers **Copy

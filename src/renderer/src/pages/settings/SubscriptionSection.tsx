@@ -46,9 +46,11 @@ function PlanCard({ plan, selected, onSelect }: { plan: SubscriptionPlan; select
       )}
     >
       <span className="text-sm font-medium text-fg">{plan.name}</span>
-      <span className="tabular text-base text-fg">
-        {plan.currency} {plan.price}
-      </span>
+      {plan.price && (
+        <span className="tabular text-base text-fg">
+          {plan.currency} {plan.price}
+        </span>
+      )}
       <span className="text-xs text-fg-subtle">{plan.durationLabel}</span>
     </button>
   )
@@ -88,7 +90,7 @@ function CodeEntry({ plan, expiresAt, onResend }: { plan: PlanId; expiresAt: str
       }}
     >
       <Notice tone="accent" icon={Send} title="Your request was sent to the administrator">
-        Send your Activation ID, plan and payment to the administrator. After checking the payment they’ll give you a 6-digit code by WhatsApp or phone. It isn’t sent to your email.
+        The administrator has been emailed a 6-digit code for your Activation ID and plan. After checking the payment they’ll give it to you by WhatsApp or phone. It isn’t sent to your email.
       </Notice>
       <Field
         label={`Activation code for ${PLAN_NAMES[plan]}`}
@@ -357,7 +359,7 @@ export function SubscriptionSection() {
             }
           />
         )}
-        {status.serviceConfigured && (
+        {status.mode === 'server' && (
           <SettingsRow
             label="Last checked"
             description={status.lastCheckedAt ? formatDateTime(status.lastCheckedAt) : 'Not yet checked with the activation service.'}
@@ -387,7 +389,7 @@ export function SubscriptionSection() {
           </SettingsSection>
         )
       )}
-      {status.state !== 'revoked' && !(status.state === 'active' && status.plan === 'lifetime') && <EnterCode />}
+      {status.mode === 'codes' && status.state !== 'revoked' && !(status.state === 'active' && status.plan === 'lifetime') && <EnterCode />}
     </>
   )
 }

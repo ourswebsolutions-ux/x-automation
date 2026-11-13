@@ -55,6 +55,7 @@ import { RunService } from './automation/runService'
 import { AccessController } from './security/accessController'
 import { loadDeviceIdentity } from './security/deviceIdentity'
 import { activationEndpoint, activationPublicKey } from './security/endpoint'
+import { LocalOtpActivation, readLocalOtpConfig, smtpSender } from './security/localOtp'
 import { PinService } from './security/pinService'
 import { SubscriptionService } from './security/subscriptionService'
 
@@ -406,9 +407,15 @@ export async function createServices(): Promise<AppServices> {
   const securityDir = join(userData, 'security')
   const pin = new PinService({ filePath: join(securityDir, 'pin.json'), log: logger.scope('pin'), bypass: bypassSecurity })
   let accessListener: () => void = () => undefined
+  const identity = await loadDeviceIdentity(process.platform, join(securityDir, 'device.id'), logger.scope('subscription'))
+  // Email OTP without a server: settings come from this PC's environment variables, never from the app's files.
+  const otpConfig = readLocalOtpConfig(process.env)
   const subscription = new SubscriptionService({
     filePath: join(securityDir, 'subscription.json'),
-    identity: await loadDeviceIdentity(process.platform, join(securityDir, 'device.id'), logger.scope('subscription')),
+    identity,
+    localOtp: otpConfig
+      ? new LocalOtpActivation({ filePath: join(securityDir, 'otp.json'), identity, config: otpConfig, send: smtpSender(otpConfig), log: logger.scope('activation') })
+      : null,
     publicKey: activationPublicKey(app.isPackaged, process.env),
     baseUrl: activationEndpoint(app.isPackaged, process.env),
     fetch: (url, init) => net.fetch(url, init),

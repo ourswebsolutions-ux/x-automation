@@ -63,6 +63,8 @@ async function launch(extraEnv = {}) {
   }
   delete env.ELECTRON_RUN_AS_NODE
   delete env.AXORA_TEST_SKIP_SECURITY
+  // This PC may have real email OTP settings; this test covers the server and code paths.
+  for (const name of Object.keys(env)) if (name.startsWith('XAUTO_SMTP_') || name === 'XAUTO_ADMIN_EMAIL') delete env[name]
   const app = await electron.launch({ executablePath: electronPath, args: [`--user-data-dir=${join(home, 'user-data')}`, '--disable-backgrounding-occluded-windows', project], env, cwd: project })
   const page = await app.firstWindow()
   await page.waitForSelector('h1', { timeout: 20000 })

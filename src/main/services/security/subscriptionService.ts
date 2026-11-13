@@ -1,4 +1,4 @@
-import { createPublicKey, verify, type KeyObject } from 'node:crypto'
+import { createHmac, createPublicKey, timingSafeEqual, verify, type KeyObject } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
@@ -8,6 +8,7 @@ import { PLAN_IDS, type OtpRequestResult, type PlanId, type SubscriptionPlan, ty
 import { ValidationError } from '../errors'
 import type { ScopedLogger } from '../logging/logger'
 import type { DeviceIdentity } from './deviceIdentity'
+import { addMonths, type LocalOtpActivation } from './localOtp'
 
 const REQUEST_TIMEOUT_MS = 20_000
 const TICK_MS = 60_000
@@ -54,6 +55,16 @@ interface StoredState {
   lastCheckedAt: string | null
   /** Latest time this device has seen, to notice the clock being wound back. */
   lastSeenAt: number
+  /** Activation by an emailed OTP on this PC (no server), sealed against casual edits. */
+  local: LocalActivation | null
+}
+
+interface LocalActivation {
+  plan: PlanId
+  /** null for Lifetime. */
+  expiresAt: string | null
+  activatedAt: string
+  seal: string
 }
 
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>
@@ -71,6 +82,8 @@ interface Deps {
   now?: () => number
   /** Automated tests of other features only; never set in an installed app. */
   bypass?: boolean
+  /** Email OTP without a server, when this PC has the email settings. */
+  localOtp?: LocalOtpActivation | null
 }
 
 /**
@@ -95,14 +108,23 @@ export class SubscriptionService {
   }
 
   get isActive(): boolean {
-    return Boolean(this.deps.bypass) || this.validClaims() !== null
+    return Boolean(this.deps.bypass) || this.validClaims() !== null || this.validLocal() !== null
+  }
+
+  private get mode(): SubscriptionStatus['mode'] {
+    return this.deps.baseUrl ? 'server' : this.deps.localOtp ? 'email' : 'codes'
   }
 
   status(): SubscriptionStatus {
-    const base = { activationId: this.deps.identity.activationId, lastCheckedAt: this.stored.lastCheckedAt, serviceConfigured: this.deps.baseUrl !== null }
+    const mode = this.mode
+    const base = { activationId: this.deps.identity.activationId, lastCheckedAt: this.stored.lastCheckedAt, serviceConfigured: mode !== 'codes', mode }
     if (this.deps.bypass) return { ...base, state: 'active', plan: 'lifetime', expiresAt: null }
     const claims = this.validClaims()
     if (claims) return { ...base, state: 'active', plan: claims.plan, expiresAt: claims.expiresAt }
+    const local = this.validLocal()
+    if (local) return { ...base, state: 'active', plan: local.plan, expiresAt: local.expiresAt }
+    const sealed = this.stored.local && this.sealOk(this.stored.local) ? this.stored.local : null
+    if (sealed && !this.stored.token) return { ...base, state: 'expired', plan: sealed.plan, expiresAt: sealed.expiresAt }
     const lapsed = this.stored.expiresAt !== null && new Date(this.stored.expiresAt).getTime() <= this.now()
     const state: SubscriptionState = this.stored.state !== 'active' ? this.stored.state : lapsed ? 'expired' : 'stale'
     return { ...base, state, plan: this.stored.plan, expiresAt: this.stored.expiresAt }
@@ -126,17 +148,25 @@ export class SubscriptionService {
   }
 
   async plans(): Promise<SubscriptionPlan[]> {
+    if (!this.deps.baseUrl && this.deps.localOtp) return this.deps.localOtp.plans()
     return plansResponse.parse(await this.call('GET', '/v1/plans')).plans
   }
 
   /** Asks the server to email the administrator a code. The app never sees that code. */
   async requestOtp(plan: PlanId): Promise<OtpRequestResult> {
+    if (!this.deps.baseUrl && this.deps.localOtp) return this.deps.localOtp.requestOtp(plan)
     const body = await this.call('POST', '/v1/activation/request', { ...this.deps.identity, plan })
     this.deps.log.info(`Activation code requested for the ${plan} plan`)
     return otpResponse.parse(body)
   }
 
   async verifyOtp(plan: PlanId, otp: string): Promise<SubscriptionStatus> {
+    if (!this.deps.baseUrl && this.deps.localOtp) {
+      await this.deps.localOtp.verifyOtp(plan, otp)
+      await this.activateLocally(plan)
+      this.deps.log.success('Subscription activated')
+      return this.status()
+    }
     const body = await this.call('POST', '/v1/activation/verify', { ...this.deps.identity, plan, otp })
     await this.apply(statusResponse.parse(body))
     if (!this.isActive) throw new ActivationUnavailableError('The activation could not be confirmed. Update X Auto, or contact the administrator.')
@@ -213,6 +243,37 @@ export class SubscriptionService {
     this.deps.onChange()
   }
 
+  /** Renewing adds to the time left, as on the server; Lifetime replaces any end date. */
+  private async activateLocally(plan: PlanId): Promise<void> {
+    const now = this.now()
+    const current = this.validLocal()
+    const from = current?.expiresAt ? Math.max(now, new Date(current.expiresAt).getTime()) : now
+    const days = this.deps.localOtp?.monthlyDays ?? 30
+    const end = plan === 'lifetime' || (current && current.expiresAt === null) ? null : plan === 'monthly' ? from + days * 86_400_000 : addMonths(from, 6)
+    const record = { plan: current?.expiresAt === null ? 'lifetime' : plan, expiresAt: end === null ? null : new Date(end).toISOString(), activatedAt: new Date(now).toISOString() } as const
+    await this.save({ ...this.stored, local: { ...record, seal: this.seal(record) }, lastSeenAt: now })
+    this.announce()
+  }
+
+  private seal(record: Omit<LocalActivation, 'seal'>): string {
+    return createHmac('sha256', `x-auto/local-activation/v1|${this.deps.identity.deviceKey}`).update(`${this.deps.identity.activationId}|${record.plan}|${record.expiresAt}|${record.activatedAt}`).digest('hex')
+  }
+
+  private sealOk(record: LocalActivation): boolean {
+    const expected = Buffer.from(this.seal(record), 'hex')
+    const actual = Buffer.from(String(record.seal), 'hex')
+    return actual.length === expected.length && timingSafeEqual(actual, expected)
+  }
+
+  private validLocal(): LocalActivation | null {
+    const record = this.stored.local
+    if (!record || !this.sealOk(record)) return null
+    const now = this.now()
+    if (record.expiresAt !== null && now >= new Date(record.expiresAt).getTime()) return null
+    if (now < this.stored.lastSeenAt - CLOCK_TOLERANCE_MS) return null
+    return record
+  }
+
   /** Checks a token by itself: signature, format, device and expiry. */
   private inspect(token: string | null): Claims | 'invalid' | 'device' | 'expired' {
     if (!token) return 'invalid'
@@ -264,7 +325,7 @@ export class SubscriptionService {
   }
 
   private read(): StoredState {
-    const blank: StoredState = { version: 1, token: null, state: 'none', plan: null, expiresAt: null, lastCheckedAt: null, lastSeenAt: this.now() }
+    const blank: StoredState = { version: 1, token: null, state: 'none', plan: null, expiresAt: null, lastCheckedAt: null, lastSeenAt: this.now(), local: null }
     try {
       const parsed = JSON.parse(readFileSync(this.deps.filePath, 'utf8')) as Partial<StoredState>
       return parsed.version === 1 ? { ...blank, ...parsed } : blank

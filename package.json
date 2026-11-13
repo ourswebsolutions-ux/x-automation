@@ -29,10 +29,12 @@
     "test:release": "node tests/release/release.test.mjs",
     "test:updates": "npm run build && node tests/e2e/updates.e2e.mjs",
     "test:security": "node tests/e2e/security.e2e.mjs",
+    "test:email-otp": "node tests/e2e/email-otp.e2e.mjs",
     "test:server": "npm --prefix server test"
   },
   "dependencies": {
     "electron-updater": "6.8.9",
+    "nodemailer": "10.3.1",
     "openai": "7.23.0",
     "zod": "4.6.5"
   },
