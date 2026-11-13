@@ -51,6 +51,9 @@ Staging uses `.env.staging`, which has its own database (`data/staging.db`) and 
 real email. Create it from `.env`: set `DATABASE_PATH=./data/staging.db`, set `PLAN_CURRENCY=TEST` with
 small prices, and add `STAGING=1`. It is git-ignored.
 
+From the project root, `npm run dev` starts this staging server along with the app (and stops it with
+the app), unless one is already running. `npm run dev -- --server-only` starts just the server.
+
 ```bash
 npm run start:staging
 npm run admin:staging -- admin-email you@example.com   # then restart
