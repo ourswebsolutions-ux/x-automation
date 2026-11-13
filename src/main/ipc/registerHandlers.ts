@@ -109,6 +109,7 @@ export function registerIpcHandlers(services: AppServices, getWindow: () => Brow
   handle(IpcChannel.SubscriptionRequestOtp, planId, (plan) => services.subscription.requestOtp(plan))
   handle(IpcChannel.SubscriptionVerifyOtp, z.object({ plan: planId, otp: z.string().regex(/^\d{6}$/, 'The code has 6 digits.') }).strict(), ({ plan, otp }) => services.subscription.verifyOtp(plan, otp))
   handle(IpcChannel.SubscriptionRefresh, noPayload, () => services.subscription.refresh())
+  handle(IpcChannel.SubscriptionApplyCode, z.string().min(1).max(4096), (code) => services.subscription.applyCode(code))
 
   // App information
   handle(

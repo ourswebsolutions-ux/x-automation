@@ -453,6 +453,8 @@ export interface RelayApi {
     requestOtp(plan: PlanId): Promise<OtpRequestResult>
     verifyOtp(plan: PlanId, otp: string): Promise<SubscriptionStatus>
     refresh(): Promise<SubscriptionStatus>
+    /** Activation without a server: the code the administrator sent. */
+    applyCode(code: string): Promise<SubscriptionStatus>
     onAccessChange(listener: (snapshot: AccessSnapshot) => void): Unsubscribe
   }
   shell: {

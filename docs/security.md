@@ -65,6 +65,16 @@ Activate → server emails the administrator the OTP → administrator checks pa
 Prices and durations exist only on the server (`server/README.md`). The app shows what `/v1/plans`
 returns.
 
+## Activation codes (no server)
+
+A build without `XAUTO_ACTIVATION_URL` has no activation server. Its Subscription page offers **Copy
+request** (Activation ID and plan, for the customer to send) and **Enter activation code**. The
+administrator makes the code with `npm run admin -- issue <Activation ID> <plan>` (see
+`server/README.md`). The code is a lease signed with the server's private key and lasting until the plan
+ends, so `SubscriptionService.applyCode` checks it offline: genuine, for this Activation ID, not expired.
+It can't be revoked. Builds with a server accept codes too. In development, `XAUTO_ACTIVATION_URL=none`
+behaves like a build without one.
+
 ## Building
 
 The server address is built in from `XAUTO_ACTIVATION_URL` and must be `https://`:

@@ -30,6 +30,7 @@ const ACCESS: Record<keyof typeof IpcChannel, ChannelAccess> = {
   SubscriptionRequestOtp: 'unlocked',
   SubscriptionVerifyOtp: 'unlocked',
   SubscriptionRefresh: 'unlocked',
+  SubscriptionApplyCode: 'unlocked',
   UpdatesStatus: 'unlocked',
   UpdatesCheck: 'unlocked',
   UpdatesDownload: 'unlocked',

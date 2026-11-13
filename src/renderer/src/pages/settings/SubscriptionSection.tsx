@@ -1,7 +1,7 @@
-import { CalendarClock, Copy, RefreshCw, Send, ShieldCheck } from 'lucide-react'
+import { CalendarClock, ClipboardCopy, Copy, KeyRound, RefreshCw, Send, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { PLAN_NAMES, type PlanId, type SubscriptionPlan, type SubscriptionState } from '@shared/types/security'
-import { Button, ErrorState, Field, Input, Notice, SettingsRow, SettingsSection, Skeleton, StatusBadge, useToast, type Tone } from '@/components/ui'
+import { Button, ErrorState, Field, Input, Notice, SettingsRow, SettingsSection, Skeleton, StatusBadge, Textarea, useToast, type Tone } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import { errorMessage, relay } from '@/lib/bridge'
 import { cn } from '@/lib/cn'
@@ -189,7 +189,102 @@ function Activate() {
   )
 }
 
-/** Settings → Subscription. Everything shown here comes from the activation server. */
+const PLAN_LENGTHS: Record<PlanId, string> = { monthly: 'Monthly', six_months: '6 months', lifetime: 'Never expires' }
+
+/** No activation server: the customer asks the administrator for a code, by any channel. */
+function RequestCode({ activationId }: { activationId: string }) {
+  const toast = useToast()
+  const [selected, setSelected] = useState<PlanId | null>(null)
+  const copy = () => {
+    if (!selected) return
+    const text = `X Auto activation request\nActivation ID: ${activationId}\nPlan: ${PLAN_NAMES[selected]}`
+    void navigator.clipboard.writeText(text).then(
+      () => toast({ tone: 'success', title: 'Request copied', description: 'Send it to the administrator by WhatsApp or email.' }),
+      () => toast({ tone: 'danger', title: 'Could not copy', description: 'Send the administrator your Activation ID and plan by hand.' })
+    )
+  }
+  return (
+    <div className="flex flex-col gap-3 px-4 py-3.5">
+      <div role="radiogroup" aria-label="Subscription plan" className="grid grid-cols-1 gap-3 @2xl:grid-cols-3">
+        {(Object.keys(PLAN_NAMES) as PlanId[]).map((id) => (
+          <button
+            key={id}
+            type="button"
+            role="radio"
+            aria-checked={selected === id}
+            onClick={() => setSelected(id)}
+            className={cn(
+              'flex flex-col gap-1 rounded-md border p-3 text-left transition-colors focus-ring',
+              selected === id ? 'border-accent-line bg-accent-soft' : 'border-line-strong bg-surface-1 hover:border-line-heavy'
+            )}
+          >
+            <span className="text-sm font-medium text-fg">{PLAN_NAMES[id]}</span>
+            <span className="text-xs text-fg-subtle">{PLAN_LENGTHS[id]}</span>
+          </button>
+        ))}
+      </div>
+      <div>
+        <Button variant="primary" icon={ClipboardCopy} disabled={!selected} onClick={copy}>
+          Copy request
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** Where the administrator's code goes. Works with or without an activation server. */
+function EnterCode() {
+  const { setStatus } = useSubscription()
+  const toast = useToast()
+  const [code, setCode] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const submit = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const status = await relay.subscription.applyCode(code)
+      setStatus(status)
+      setCode('')
+      toast({ tone: 'success', title: 'Subscription activated', description: status.plan ? `${PLAN_NAMES[status.plan]} is active on this device.` : undefined })
+    } catch (failure) {
+      setError(errorMessage(failure))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <SettingsSection title="Enter activation code" description="Paste the code the administrator sent you after payment.">
+      <form
+        className="flex flex-col gap-3 px-4 py-3.5"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void submit()
+        }}
+      >
+        <Field label="Activation code" htmlFor="activation-token" error={error}>
+          <Textarea
+            id="activation-token"
+            rows={3}
+            spellCheck={false}
+            autoComplete="off"
+            className="font-mono text-xs break-all"
+            value={code}
+            invalid={Boolean(error)}
+            onChange={(event) => setCode(event.target.value)}
+          />
+        </Field>
+        <div>
+          <Button type="submit" variant="primary" icon={KeyRound} loading={busy} disabled={code.trim().length < 20}>
+            Activate with code
+          </Button>
+        </div>
+      </form>
+    </SettingsSection>
+  )
+}
+
+/** Settings → Subscription. Plans and prices come from the activation server when there is one. */
 export function SubscriptionSection() {
   const { status, setStatus } = useSubscription()
   const toast = useToast()
@@ -227,11 +322,6 @@ export function SubscriptionSection() {
   const state = STATE[status.state]
   return (
     <>
-      {!status.serviceConfigured && (
-        <Notice tone="warning" title="Activation isn’t set up in this build">
-          This copy of X Auto has no activation server address.
-        </Notice>
-      )}
       <SettingsSection
         title="Subscription"
         description="Your plan on this device."
@@ -267,22 +357,37 @@ export function SubscriptionSection() {
             }
           />
         )}
-        <SettingsRow
-          label="Last checked"
-          description={status.lastCheckedAt ? formatDateTime(status.lastCheckedAt) : 'Not yet checked with the activation service.'}
-          control={
-            <Button size="sm" icon={RefreshCw} loading={checking} onClick={() => void check()}>
-              Check now
-            </Button>
-          }
-        />
+        {status.serviceConfigured && (
+          <SettingsRow
+            label="Last checked"
+            description={status.lastCheckedAt ? formatDateTime(status.lastCheckedAt) : 'Not yet checked with the activation service.'}
+            control={
+              <Button size="sm" icon={RefreshCw} loading={checking} onClick={() => void check()}>
+                Check now
+              </Button>
+            }
+          />
+        )}
       </SettingsSection>
       {status.state === 'revoked' && (
         <Notice tone="warning" title="This subscription was revoked">
           Contact the administrator to restore it.
         </Notice>
       )}
-      <Activate />
+      {status.serviceConfigured ? (
+        <Activate />
+      ) : (
+        !(status.state === 'active' && status.plan === 'lifetime') &&
+        status.state !== 'revoked' && (
+          <SettingsSection
+            title={status.state === 'active' ? 'Renew or change plan' : 'Activate X Auto'}
+            description="Choose a plan and send the request to the administrator. After payment they’ll send you an activation code."
+          >
+            <RequestCode activationId={status.activationId} />
+          </SettingsSection>
+        )
+      )}
+      {status.state !== 'revoked' && !(status.state === 'active' && status.plan === 'lifetime') && <EnterCode />}
     </>
   )
 }

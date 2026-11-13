@@ -2,6 +2,8 @@ import { createHash, createHmac, randomInt, sign, timingSafeEqual } from 'node:c
 import { transaction } from './db.mjs'
 
 export const OTP_TTL_MS = 10 * 60_000
+/** A Lifetime activation code has to end somewhere; this is far beyond any install. */
+const OFFLINE_LIFETIME_UNTIL = Date.UTC(2100, 0, 1)
 export const OTP_MAX_ATTEMPTS = 5
 export const OTP_COOLDOWN_MS = 60_000
 const HOUR = 3_600_000
@@ -206,6 +208,36 @@ export class ActivationService {
     })
   }
 
+  /**
+   * Activation without a server: a code the administrator gives the customer, who pastes it into the
+   * app. It is a lease signed with the private key that lasts as long as the subscription, so the app
+   * checks it offline. `renew` adds a plan's time, as a paid activation does; `reissue` gives the
+   * current subscription's code again (a reinstall, a lost message) without adding time.
+   */
+  issueCode(activationId, planId, { renew = true } = {}) {
+    if (!ACTIVATION_ID.test(activationId ?? '')) throw fail.input('Activation ID')
+    const now = this.now()
+    return transaction(this.db, () => {
+      const existing = this.#subscription(activationId)
+      if (existing?.status === 'revoked') throw fail.revoked()
+      if (renew) {
+        const durations = this.config.durations ?? { monthly: { days: 30 }, six_months: { months: 6 }, lifetime: null }
+        if (!(planId in durations)) throw fail.planUnavailable()
+        const lifetimeNow = existing?.status === 'active' && existing.expires_at === null
+        if (lifetimeNow && planId !== 'lifetime') throw fail.lifetime()
+        if (!lifetimeNow) this.#activate(activationId, { id: planId, duration: durations[planId] }, existing, now)
+        this.#log('code_issued', activationId, planId, 'admin')
+      } else {
+        if (!existing) throw new ActivationError(404, 'not_found', 'No subscription for that Activation ID.')
+        this.#log('code_reissued', activationId, existing.plan, 'admin')
+      }
+      const subscription = this.#view(activationId)
+      if (subscription.state !== 'active') throw new ActivationError(409, 'not_active', `That subscription is ${subscription.state}.`)
+      const record = this.#subscription(activationId)
+      return { plan: record.plan, expiresAt: subscription.expiresAt, code: this.#token(record, now, record.expires_at ?? OFFLINE_LIFETIME_UNTIL) }
+    })
+  }
+
   /** Staging only: returns a device to "never activated" so the test can be repeated. */
   resetForTesting(activationId) {
     if (!this.config.staging) throw new ActivationError(403, 'staging_only', 'reset works only with STAGING=1.')
@@ -315,8 +347,8 @@ export class ActivationService {
   }
 
   /** A signed lease. It never outlives the subscription, so expiry needs no further check on the device. */
-  #token(subscription, now) {
-    const lease = now + this.config.leaseMs
+  #token(subscription, now, leaseUntil = null) {
+    const lease = leaseUntil ?? now + this.config.leaseMs
     const payload = Buffer.from(
       JSON.stringify({
         v: 1,

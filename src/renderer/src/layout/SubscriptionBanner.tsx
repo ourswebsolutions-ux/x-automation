@@ -8,7 +8,7 @@ const MESSAGES: Record<Exclude<SubscriptionState, 'active'>, { title: string; bo
   none: { title: 'X Auto isn’t activated', body: 'You can look around, but publishing, campaigns and AI need a subscription.' },
   expired: { title: 'Your subscription has expired', body: 'Publishing, campaigns and AI are paused until you renew. Your data is safe.' },
   revoked: { title: 'Your subscription was revoked', body: 'Publishing, campaigns and AI are off. Contact the administrator.' },
-  stale: { title: 'Your subscription needs checking', body: 'X Auto hasn’t reached the activation service for a while. Connect to the internet and check again.' }
+  stale: { title: 'Your subscription needs checking', body: 'X Auto hasn’t reached the activation service for a while. Connect to the internet and check again, or enter a new activation code.' }
 }
 
 export function SubscriptionBanner() {

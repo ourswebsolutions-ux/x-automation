@@ -317,6 +317,7 @@ const api: RelayApi = {
     requestOtp: (plan) => invoke(IpcChannel.SubscriptionRequestOtp, plan),
     verifyOtp: (plan, otp) => invoke(IpcChannel.SubscriptionVerifyOtp, { plan, otp }),
     refresh: () => invoke(IpcChannel.SubscriptionRefresh),
+    applyCode: (code) => invoke(IpcChannel.SubscriptionApplyCode, code),
     onAccessChange: (listener) => subscribe(IpcEvent.AccessChanged, listener)
   },
   shell: {

@@ -199,6 +199,7 @@ export const IpcChannel = {
   SubscriptionRequestOtp: 'subscription:request-otp',
   SubscriptionVerifyOtp: 'subscription:verify-otp',
   SubscriptionRefresh: 'subscription:refresh',
+  SubscriptionApplyCode: 'subscription:apply-code',
   ShellOpenExternal: 'shell:open-external'
 } as const
 

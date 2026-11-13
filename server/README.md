@@ -31,6 +31,29 @@ shows "No plans are available yet".
 key: a new key pair means every customer needs an app update. The public key is in
 `src/shared/config/activation.ts`.
 
+## Activation codes (no server needed)
+
+X Auto can be activated without this server running anywhere. You make a code on your own PC; the app
+checks it with the public key built into it, so it works offline and only you can make one. Installed
+builds without `XAUTO_ACTIVATION_URL` use this, and every build accepts a code.
+
+1. The customer opens **Settings → Subscription**, picks a plan, clicks **Copy request** and sends it
+   to you (WhatsApp, email, anything). It contains their Activation ID and plan.
+2. You check the payment, then on your PC, in this `server` folder:
+   ```bash
+   npm run admin -- issue XA-XXXX-XXXX-XXXX monthly     # or six_months, lifetime
+   ```
+3. Send them the long code it prints. They paste it under **Enter activation code** and click
+   **Activate with code**.
+
+`issue` adds the plan's time (a renewal extends from the current end date). `npm run admin -- code
+XA-...` prints the current subscription's code again without adding time, for a reinstall or a lost
+message. Every code is recorded in `data/activation.db` and the activation log.
+
+Without a server, a code can't be revoked: it works until its plan ends (Lifetime: always). Keep
+`.env` (its `SIGNING_PRIVATE_KEY`) and `data/` backed up and private: whoever has that key can make
+codes, and if it is lost, no new codes can be made for the builds already installed.
+
 ## Administrator email
 
 OTPs go to `ADMIN_EMAIL` in the server's settings file and nowhere else. The desktop app never knows

@@ -289,6 +289,57 @@ const DAY = 86_400_000
   http.closeAllConnections()
 }
 
+// ── Activation codes: no server on the customer's side ──
+{
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519')
+  const other = generateKeyPairSync('ed25519')
+  let now = Date.UTC(2026, 0, 15, 12)
+  const admin = new ActivationService({ db: openDatabase(':memory:'), config: { plans: [], otpPepper: 'p'.repeat(32), privateKey, leaseMs: 7 * DAY }, mailer: { sendOtp: async () => {} }, now: () => now })
+  const identity = deriveIdentity('offline-customer')
+  const file = join(dir, 'offline.json')
+  const make = () =>
+    new SubscriptionService({
+      filePath: file,
+      identity,
+      publicKey: publicKey.export({ format: 'der', type: 'spki' }).toString('base64'),
+      baseUrl: null,
+      fetch: () => Promise.reject(new Error('there is no server')),
+      log: log as never,
+      now: () => now,
+      onChange: () => undefined
+    })
+  const app = make()
+  check('code: no server, starts inactive', !app.isActive && app.status().serviceConfigured === false)
+  const monthly = admin.issueCode(identity.activationId, 'monthly').code
+  const shown = await app.applyCode(`  ${monthly.slice(0, 40)}\n${monthly.slice(40)}  `)
+  check('code: a pasted code activates (spaces and line breaks ignored)', app.isActive && shown.plan === 'monthly' && shown.state === 'active')
+  check('code: survives a restart', make().isActive)
+  check('code: Check now without a server keeps it', (await app.refresh()).state === 'active')
+  now += 29 * DAY
+  check('code: still active a day before the end, offline', make().isActive)
+  now += DAY
+  check('code: ends exactly when the plan does', !make().isActive && make().status().state === 'expired')
+  const renewed = admin.issueCode(identity.activationId, 'monthly').code
+  check('code: a renewal code restores it', (await make().applyCode(renewed)).state === 'active')
+
+  const otherDevice = admin.issueCode(deriveIdentity('someone-else').activationId, 'lifetime').code
+  check('code: another device’s code is refused', (await errOf(make().applyCode(otherDevice))).includes('another device'))
+  const [payload, signature] = renewed.split('.')
+  const upgraded = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(payload!, 'base64url').toString()), plan: 'lifetime', leaseUntil: '2100-01-01T00:00:00.000Z' })).toString('base64url')
+  check('code: an edited code is refused', (await errOf(make().applyCode(`${upgraded}.${signature}`))).includes('isn’t valid'))
+  const forgedAdmin = new ActivationService({ db: openDatabase(':memory:'), config: { plans: [], otpPepper: 'p'.repeat(32), privateKey: other.privateKey, leaseMs: DAY }, mailer: { sendOtp: async () => {} }, now: () => now })
+  check('code: a code made with any other key is refused', (await errOf(make().applyCode(forgedAdmin.issueCode(identity.activationId, 'lifetime').code))).includes('isn’t valid'))
+  check('code: garbage is refused', (await errOf(make().applyCode('hello'))).includes('isn’t valid') && (await errOf(make().applyCode('a.b.c'))).includes('isn’t valid'))
+  check('code: refusals leave the subscription as it was', make().isActive && make().status().plan === 'monthly')
+  now += 60 * DAY
+  check('code: an expired code is refused', (await errOf(make().applyCode(renewed))).includes('expired'))
+  const lifetime = admin.issueCode(identity.activationId, 'lifetime').code
+  await make().applyCode(lifetime)
+  now += 50 * 365 * DAY
+  check('code: Lifetime still active fifty years later', make().isActive && make().status().expiresAt === null)
+  check('endpoint: development can behave like a build without a server', activationEndpoint(false, { XAUTO_ACTIVATION_URL: 'none' }) === null)
+}
+
 rmSync(dir, { recursive: true, force: true, maxRetries: 5 })
 console.log(results.join('\n'))
 process.exit(results.some((r) => r.startsWith('FAIL')) ? 1 : 0)

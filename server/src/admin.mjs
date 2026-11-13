@@ -6,6 +6,9 @@ const { config, envFile, service, mailer } = loadRuntime()
 const [command, ...args] = process.argv.slice(2).filter((arg) => !arg.startsWith('--env='))
 const date = (ms) => (ms === null ? 'never' : new Date(ms).toISOString())
 const usage = `Usage: npm run admin -- <command>      (npm run admin:staging for the staging environment)
+  issue <activationId> <plan>   activation code for a paid plan (monthly, six_months, lifetime);
+                                adds the plan's time, like a renewal
+  code <activationId>           the current subscription's code again, adding no time
   admin-email                   show where OTP emails go
   admin-email <address>         change it (restart the server afterwards)
   send-test                     send a test email to that address (it contains no OTP)
@@ -19,6 +22,14 @@ const usage = `Usage: npm run admin -- <command>      (npm run admin:staging for
 
 try {
   switch (command) {
+    case 'issue':
+    case 'code': {
+      const issued = service.issueCode(args[0], args[1], { renew: command === 'issue' })
+      console.log(`Plan: ${issued.plan}   Expires: ${issued.expiresAt ?? 'never'}`)
+      console.log('Send the customer this activation code (all of it, one line):\n')
+      console.log(issued.code)
+      break
+    }
     case 'admin-email':
       if (args[0]) {
         setAdminEmail(envFile, args[0])

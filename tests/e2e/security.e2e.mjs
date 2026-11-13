@@ -53,12 +53,13 @@ const service = new ActivationService({
 const http = createApp(service)
 await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve))
 
-async function launch() {
+async function launch(extraEnv = {}) {
   const env = {
     ...process.env,
     XDG_CONFIG_HOME: home,
     XAUTO_ACTIVATION_URL: `http://127.0.0.1:${http.address().port}`,
-    XAUTO_ACTIVATION_PUBLIC_KEY: publicKey.export({ format: 'der', type: 'spki' }).toString('base64')
+    XAUTO_ACTIVATION_PUBLIC_KEY: publicKey.export({ format: 'der', type: 'spki' }).toString('base64'),
+    ...extraEnv
   }
   delete env.ELECTRON_RUN_AS_NODE
   delete env.AXORA_TEST_SKIP_SECURITY
@@ -271,4 +272,23 @@ check('renewing restores access', (await call(page, 'drafts.save', {})) !== 'SUB
 
 const closed = await Promise.race([app.close().then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), 20000))])
 check('the app shuts down after automation stopped and restarted', closed)
+
+// ── No activation server, as in an installed build without one: activation codes ──
+;({ app, page } = await launch({ XAUTO_ACTIVATION_URL: 'none' }))
+await typePin(page, '2468')
+await page.waitForSelector('nav', { timeout: 15000 })
+await goSubscription(page)
+check('without a server the page still opens, with no error', !(await body(page)).includes('could not be loaded') && !(await body(page)).includes('isn’t set up'))
+check('it offers the code entry', await page.locator('#activation-token').isVisible())
+await page.fill('#activation-token', 'not-a-code-at-all-but-long-enough')
+await page.getByRole('button', { name: 'Activate with code' }).click()
+await page.waitForSelector('text=This activation code isn’t valid')
+check('a wrong code is refused on screen', true)
+const lifetimeCode = service.issueCode(activationId, 'lifetime').code
+await page.fill('#activation-token', lifetimeCode)
+await page.getByRole('button', { name: 'Activate with code' }).click()
+await page.waitForSelector('text=Subscription activated', { timeout: 10000 })
+check('an administrator’s code activates with no server', (await page.evaluate(() => window.relay.subscription.status())).plan === 'lifetime' && (await call(page, 'drafts.save', {})) !== 'SUBSCRIPTION_REQUIRED')
+await snap(page, '14-activated-with-code')
+await Promise.race([app.close(), new Promise((resolve) => setTimeout(resolve, 20000))])
 report(results.some((r) => r.startsWith('FAIL')) ? 1 : 0)

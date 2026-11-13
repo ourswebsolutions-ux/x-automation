@@ -16,6 +16,10 @@ function positiveInt(env, name, fallback) {
   return value
 }
 
+export function planDurations(env) {
+  return { monthly: { days: positiveInt(env, 'PLAN_MONTHLY_DAYS', 30) }, six_months: { months: 6 }, lifetime: null }
+}
+
 /** Plans come only from configuration: a plan without a price is simply not offered. */
 export function loadPlans(env) {
   const currency = env.PLAN_CURRENCY?.trim() ?? ''
@@ -66,6 +70,8 @@ export function loadConfig(env = process.env) {
       pass: required(env, 'SMTP_PASS').replace(/\s+/g, ''),
       from: env.SMTP_FROM?.trim() || required(env, 'SMTP_USER')
     },
-    plans: loadPlans(env)
+    plans: loadPlans(env),
+    /** Plan lengths for activation codes, which carry no price. */
+    durations: planDurations(env)
   }
 }

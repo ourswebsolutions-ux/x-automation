@@ -338,6 +338,62 @@ describe('subscription lifetime', () => {
   })
 })
 
+describe('activation codes (no server on the customer side)', () => {
+  const claimsOf = (code) => JSON.parse(Buffer.from(code.split('.')[0], 'base64url'))
+  const valid = (code) => {
+    const [payload, signature] = code.split('.')
+    return verify(null, Buffer.from(payload, 'base64url'), publicKey, Buffer.from(signature, 'base64url'))
+  }
+
+  it('issues a signed code for the plan, lasting exactly as long as the plan', () => {
+    const issued = service.issueCode(A, 'monthly')
+    assert.equal(issued.expiresAt, new Date(START + 30 * DAY).toISOString())
+    assert.ok(valid(issued.code))
+    const claims = claimsOf(issued.code)
+    assert.equal(claims.activationId, A)
+    assert.equal(claims.plan, 'monthly')
+    assert.equal(claims.leaseUntil, issued.expiresAt)
+    assert.equal(mail.length, 0, 'no email is involved')
+  })
+
+  it('works with no prices configured at all', () => {
+    service.config = { ...service.config, plans: [] }
+    assert.equal(service.issueCode(A, 'six_months').expiresAt, new Date(Date.UTC(2026, 6, 15, 12)).toISOString())
+  })
+
+  it('Lifetime codes never lapse in practice', () => {
+    const issued = service.issueCode(A, 'lifetime')
+    assert.equal(issued.expiresAt, null)
+    assert.equal(claimsOf(issued.code).leaseUntil, '2100-01-01T00:00:00.000Z')
+  })
+
+  it('issue renews like a payment; code repeats without adding time', () => {
+    service.issueCode(A, 'monthly')
+    clock += 10 * DAY
+    assert.equal(service.issueCode(A, 'monthly').expiresAt, new Date(START + 60 * DAY).toISOString())
+    assert.equal(service.issueCode(A, null, { renew: false }).expiresAt, new Date(START + 60 * DAY).toISOString())
+    assert.equal(service.logs(A).map((l) => l.event).join(), 'code_reissued,code_issued,code_issued')
+  })
+
+  it('refuses unknown plans and IDs, a downgrade from Lifetime, and revoked devices', () => {
+    assert.throws(() => service.issueCode(A, 'weekly'), /not available/)
+    assert.throws(() => service.issueCode('XA-0000-0000-0000', 'monthly'), /Activation ID/)
+    assert.throws(() => service.issueCode(B, null, { renew: false }), /No subscription/)
+    service.issueCode(A, 'lifetime')
+    assert.throws(() => service.issueCode(A, 'monthly'), /Lifetime/)
+    assert.ok(valid(service.issueCode(A, 'lifetime').code), 'Lifetime can be given again')
+    service.revoke(A)
+    assert.throws(() => service.issueCode(A, 'lifetime'), /revoked/)
+  })
+
+  it('cannot reissue an expired subscription', () => {
+    service.issueCode(A, 'monthly')
+    clock += 31 * DAY
+    assert.throws(() => service.issueCode(A, null, { renew: false }), /expired/)
+    assert.equal(service.issueCode(A, 'monthly').expiresAt, new Date(clock + 30 * DAY).toISOString(), 'a new payment starts from today')
+  })
+})
+
 describe('logs and transport', () => {
   it('records each step and never an OTP', async () => {
     await request()

@@ -23,6 +23,7 @@ const WATCH_MS = 3000
 const note = (text) => console.log(`[activation] ${text}`)
 
 async function serverIsUp() {
+  if (process.env.XAUTO_ACTIVATION_URL === 'none') return true
   try {
     return (await fetch(`${activationUrl}/healthz`, { signal: AbortSignal.timeout(1500) })).ok
   } catch {

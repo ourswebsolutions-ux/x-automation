@@ -144,9 +144,34 @@ export class SubscriptionService {
     return this.status()
   }
 
+  /**
+   * Activation without a server: a code from the administrator (`npm run admin -- issue`). It is
+   * checked here, offline, with the public key, so it works only if the administrator made it, only
+   * on this device, and only until the plan ends.
+   */
+  async applyCode(input: string): Promise<SubscriptionStatus> {
+    const code = input.replace(/\s+/g, '')
+    const claims = this.inspect(code)
+    if (claims === 'invalid') throw new ValidationError('This activation code isn’t valid. Paste the whole code exactly as the administrator sent it.')
+    if (claims === 'device') throw new ValidationError('This activation code is for another device. Send the administrator the Activation ID shown on this page.')
+    if (claims === 'expired') throw new ValidationError('This activation code has already expired. Ask the administrator for a new one.')
+    await this.save({
+      ...this.stored,
+      token: code,
+      state: 'active',
+      plan: claims.plan,
+      expiresAt: claims.expiresAt,
+      lastCheckedAt: new Date(this.now()).toISOString(),
+      lastSeenAt: this.now()
+    })
+    this.announce()
+    this.deps.log.success(`Subscription activated with a code (${claims.plan})`)
+    return this.status()
+  }
+
   /** Quiet when offline: the current lease simply stays in force. */
   async refresh(): Promise<SubscriptionStatus> {
-    if (this.deps.bypass) return this.status()
+    if (this.deps.bypass || !this.deps.baseUrl) return this.status()
     try {
       await this.apply(statusResponse.parse(await this.call('POST', '/v1/subscription/status', this.deps.identity)))
     } catch (error) {
@@ -188,25 +213,30 @@ export class SubscriptionService {
     this.deps.onChange()
   }
 
-  private validClaims(): Claims | null {
-    const token = this.stored.token
-    if (!token) return null
-    const [payload, signature] = token.split('.')
-    if (!payload || !signature) return null
+  /** Checks a token by itself: signature, format, device and expiry. */
+  private inspect(token: string | null): Claims | 'invalid' | 'device' | 'expired' {
+    if (!token) return 'invalid'
+    const [payload, signature, extra] = token.split('.')
+    if (!payload || !signature || extra !== undefined) return 'invalid'
     const bytes = Buffer.from(payload, 'base64url')
-    if (!verify(null, bytes, this.key, Buffer.from(signature, 'base64url'))) return null
     let claims: Claims
     try {
+      if (!verify(null, bytes, this.key, Buffer.from(signature, 'base64url'))) return 'invalid'
       claims = claimsSchema.parse(JSON.parse(bytes.toString('utf8')))
     } catch {
-      return null
+      return 'invalid'
     }
-    const now = this.now()
-    if (claims.activationId !== this.deps.identity.activationId) return null
-    if (now >= new Date(claims.leaseUntil).getTime()) return null
+    if (claims.activationId !== this.deps.identity.activationId) return 'device'
+    if (this.now() >= new Date(claims.leaseUntil).getTime()) return 'expired'
+    return claims
+  }
+
+  private validClaims(): Claims | null {
+    const claims = this.inspect(this.stored.token)
+    if (typeof claims === 'string') return null
     // A clock wound back can't revive an old lease. This compares the device with itself on
     // purpose: a PC whose clock simply disagrees with the server's must still be able to activate.
-    if (now < this.stored.lastSeenAt - CLOCK_TOLERANCE_MS) return null
+    if (this.now() < this.stored.lastSeenAt - CLOCK_TOLERANCE_MS) return null
     return claims
   }
 
