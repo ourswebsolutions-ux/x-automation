@@ -81,7 +81,8 @@ jobs:
       - name: Check out ${{ env.TAG || github.ref_name }}
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG || github.ref }}
+          # The exact commit that triggered the run: a branch name would be read later, after it moved.
+          ref: ${{ env.TAG || github.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -201,7 +202,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG || github.ref }}
+          # The exact commit that triggered the run: a branch name would be read later, after it moved.
+          ref: ${{ env.TAG || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
