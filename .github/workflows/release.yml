@@ -141,6 +141,8 @@ jobs:
       - name: Build the app
         env:
           XAUTO_ACTIVATION_URL: ${{ vars.XAUTO_ACTIVATION_URL }}
+          # Public builds never carry email settings (see scripts/build-team-installer.mjs).
+          XAUTO_TEAM_BUILD: '0'
         run: npx electron-vite build
 
       - name: Package installers

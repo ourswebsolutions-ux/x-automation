@@ -93,6 +93,21 @@ files, installer, window or logs. **The limits of having no server:** the SMTP p
 that sends, and the check runs on the same PC as the user, so whoever controls that PC can read the
 password and get around the OTP. That is fine for your own PCs; for customers, use the server.
 
+### Team installer: the same, with no setup on each laptop
+
+`npm run dist:win:team` builds `release/<version>-team/X-Auto-<version>-windows-x64-team-setup.exe`
+with this PC's email settings (the variables above) built in. Installed on any laptop, it shows the OTP
+activation page with no setup, and keeps the settings on that laptop encrypted with its Windows
+account (DPAPI), so later public updates from GitHub, which carry no settings, keep working.
+
+Settings are taken in this order: the laptop's own environment variables, then the kept settings, then
+the installer's.
+
+**The team installer contains the email password.** Share it with an unlisted link (Google Drive or
+OneDrive, "anyone with the link") and never attach it to a GitHub release: releases of a public
+repository are listed for everyone, and their download links can be guessed. GitHub builds never
+include settings (`XAUTO_TEAM_BUILD` is set to `0` in the release workflow).
+
 ## Activation codes (no server)
 
 A build without `XAUTO_ACTIVATION_URL` has no activation server. Its Subscription page offers **Copy

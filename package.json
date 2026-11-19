@@ -16,6 +16,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "dist:win": "node scripts/prepare-engine.mjs --platform=win && npm run build && electron-builder --win --publish never",
+    "dist:win:team": "node scripts/build-team-installer.mjs",
     "dist:linux": "node scripts/prepare-engine.mjs --platform=linux && npm run build && electron-builder --linux --publish never",
     "dist:mac": "node scripts/prepare-engine.mjs --platform=mac --arch=arm64 && npm run build && electron-builder --mac --arm64 --publish never",
     "dist:mac:x64": "node scripts/prepare-engine.mjs --platform=mac --arch=x64 && npm run build && electron-builder --mac --x64 --publish never",

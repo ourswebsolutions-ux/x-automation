@@ -56,6 +56,7 @@ import { AccessController } from './security/accessController'
 import { loadDeviceIdentity } from './security/deviceIdentity'
 import { activationEndpoint, activationPublicKey } from './security/endpoint'
 import { LocalOtpActivation, readLocalOtpConfig, smtpSender } from './security/localOtp'
+import { builtInEmailSettings, resolveEmailSettings } from './security/teamEmail'
 import { PinService } from './security/pinService'
 import { SubscriptionService } from './security/subscriptionService'
 
@@ -409,7 +410,7 @@ export async function createServices(): Promise<AppServices> {
   let accessListener: () => void = () => undefined
   const identity = await loadDeviceIdentity(process.platform, join(securityDir, 'device.id'), logger.scope('subscription'))
   // Email OTP without a server: settings come from this PC's environment variables, never from the app's files.
-  const otpConfig = readLocalOtpConfig(process.env)
+  const otpConfig = readLocalOtpConfig(await resolveEmailSettings({ env: process.env, builtIn: builtInEmailSettings(), vault, log: logger.scope('activation') }))
   const subscription = new SubscriptionService({
     filePath: join(securityDir, 'subscription.json'),
     identity,

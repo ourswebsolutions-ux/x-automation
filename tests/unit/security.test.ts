@@ -14,6 +14,7 @@ import { activationEndpoint, activationPublicKey } from '../../src/main/services
 import { PinService, PIN_ATTEMPTS } from '../../src/main/services/security/pinService'
 import { ActivationUnavailableError, SubscriptionService } from '../../src/main/services/security/subscriptionService'
 import { LocalOtpActivation, OTP_COOLDOWN_MS, OTP_TTL_MS, readLocalOtpConfig } from '../../src/main/services/security/localOtp'
+import { builtInEmailSettings, resolveEmailSettings } from '../../src/main/services/security/teamEmail'
 // @ts-expect-error plain JavaScript, tested by its own suite
 import { ActivationService } from '../../server/src/activation.mjs'
 // @ts-expect-error plain JavaScript
@@ -435,6 +436,24 @@ const DAY = 86_400_000
   now += 40 * 365 * DAY
   check('email otp: Lifetime never ends', life.expiresAt === null && make().isActive)
   check('email otp: the window never receives the OTP or SMTP settings', !JSON.stringify(await make().plans()).includes('abcd') && !JSON.stringify(make().status()).includes('sender@'))
+}
+
+// ── Team installer settings: this PC first, then kept settings, then built in ──
+{
+  const store = new Map<string, string>()
+  const vault = { status: () => ({ available: true, secure: true, backend: 't', detail: '' }), has: (k: string) => store.has(k), get: (k: string) => store.get(k) ?? null, set: async (k: string, v: string) => void store.set(k, v), delete: async (k: string) => void store.delete(k), keys: () => [...store.keys()], clear: async () => store.size }
+  const team = { XAUTO_SMTP_USER: 'team@example.com', XAUTO_SMTP_PASS: 'team-pass', XAUTO_ADMIN_EMAIL: 'boss@example.com' }
+  const pc = { XAUTO_SMTP_USER: 'pc@example.com', XAUTO_SMTP_PASS: 'pc-pass', XAUTO_ADMIN_EMAIL: 'pc-admin@example.com' }
+  check('team: a normal build has no built-in settings', builtInEmailSettings() === null)
+  check('team: nothing anywhere means no email settings', (await resolveEmailSettings({ env: {}, builtIn: null, vault, log: log as never })).XAUTO_SMTP_USER === undefined)
+  const first = await resolveEmailSettings({ env: {}, builtIn: team, vault, log: log as never })
+  check('team: the installer’s settings are used on a fresh laptop', first.XAUTO_ADMIN_EMAIL === 'boss@example.com')
+  check('team: and kept on that laptop, encrypted', JSON.parse(store.get('activation.email-settings') ?? '{}').XAUTO_SMTP_PASS === 'team-pass')
+  check('team: a later public update (none built in) still has them', (await resolveEmailSettings({ env: {}, builtIn: null, vault, log: log as never })).XAUTO_ADMIN_EMAIL === 'boss@example.com')
+  check('team: a PC’s own environment variables win', (await resolveEmailSettings({ env: pc, builtIn: null, vault, log: log as never })).XAUTO_ADMIN_EMAIL === 'pc-admin@example.com')
+  check('team: incomplete PC settings fall back to the kept ones', (await resolveEmailSettings({ env: { XAUTO_SMTP_USER: 'x@y.co' }, builtIn: null, vault, log: log as never })).XAUTO_ADMIN_EMAIL === 'boss@example.com')
+  store.set('activation.email-settings', JSON.stringify({ ...team, PATH: 'evil' }))
+  check('team: only email settings are taken from what is kept', !('PATH' in (await resolveEmailSettings({ env: {}, builtIn: null, vault, log: log as never }))))
 }
 
 rmSync(dir, { recursive: true, force: true, maxRetries: 5 })

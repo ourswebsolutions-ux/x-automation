@@ -8,7 +8,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const exe = process.argv[2]
-const shots = process.argv[3] ?? null
+const positional = process.argv.slice(3).filter((a) => !a.startsWith('--'))
+const shots = positional[0] ?? null
+// A team-installer test build: the settings are built in (pointing at this fixed port), not given here.
+const builtInPort = process.argv.find((a) => a.startsWith('--built-in-port='))?.split('=')[1]
+// After activating, open this public build (no settings) with the same data, as after an update.
+const publicExe = process.argv.find((a) => a.startsWith('--public-exe='))?.slice('--public-exe='.length)
 if (!exe || !existsSync(exe)) {
   console.log('Usage: node tests/e2e/email-otp.e2e.mjs "<path to X Auto.exe>" [screenshot-folder]')
   process.exit(2)
@@ -49,7 +54,7 @@ const sink = createServer((socket) => {
     }
   })
 })
-await new Promise((resolve) => sink.listen(0, '127.0.0.1', resolve))
+await new Promise((resolve) => sink.listen(builtInPort ? Number(builtInPort) : 0, '127.0.0.1', resolve))
 const otpOf = () => /OTP: (\d{6})/.exec(mail.at(-1)?.data ?? '')?.[1]
 
 const finish = async (app) => {
@@ -79,8 +84,9 @@ const leaked = appFiles.filter((p) => {
   const text = readFileSync(p).toString('latin1')
   return /SIGNING_PRIVATE_KEY=|OTP_PEPPER=/.test(text) || realSecrets.some((secret) => text.includes(secret))
 })
-check('real SMTP settings were available to look for', realSecrets.length > 0 || process.env.XAUTO_SKIP_SECRET_SCAN === '1')
-check('the installed app files contain no SMTP password, admin address or private key', leaked.length === 0, leaked.join(', '))
+if (builtInPort) check('team build: settings are built in on purpose, so the secret scan is skipped', true)
+else check('real SMTP settings were available to look for', realSecrets.length > 0 || process.env.XAUTO_SKIP_SECRET_SCAN === '1')
+if (!builtInPort) check('the installed app files contain no SMTP password, admin address or private key', leaked.length === 0, leaked.join(', '))
 
 const env = {
   ...process.env,
@@ -95,6 +101,8 @@ const env = {
 }
 delete env.ELECTRON_RUN_AS_NODE
 delete env.AXORA_TEST_SKIP_SECURITY
+if (builtInPort) for (const name of Object.keys(env)) if (name.startsWith('XAUTO_')) delete env[name]
+const expectedAdmin = builtInPort ? 'team-admin@example.com' : 'admin@example.com'
 
 const app = await electron.launch({ executablePath: exe, args: [`--user-data-dir=${join(home, 'user-data')}`], env })
 try {
@@ -142,8 +150,8 @@ try {
   await page.waitForSelector('#activation-code', { timeout: 30000 })
   const otp = otpOf()
   check('Activate emails a 6-digit OTP', /^\d{6}$/.test(otp ?? ''))
-  check('only to the admin address', mail.length === 1 && mail[0].to.join() === 'admin@example.com', mail[0]?.to.join())
-  check('with Activation ID, plan, price and expiry', [activationId, 'Plan: Monthly', 'PKR 2000', 'Expires:'].every((p) => mail[0].data.includes(p)))
+  check('only to the admin address', mail.length === 1 && mail[0].to.join() === expectedAdmin, mail[0]?.to.join())
+  check('with Activation ID, plan and expiry', [activationId, 'Plan: Monthly', 'Expires:', ...(builtInPort ? [] : ['PKR 2000'])].every((p) => mail[0].data.includes(p)))
   check('the window never shows the OTP', !(await body()).includes(otp))
   if (shots) await page.screenshot({ path: join(shots, 'email-02-enter-code.png') })
 
@@ -165,11 +173,37 @@ try {
   // Nothing secret on disk
   const security = join(home, 'user-data', 'security')
   const written = readdirSync(security).map((f) => readFileSync(join(security, f), 'utf8')).join('')
-  check('no OTP or SMTP password in the app’s saved files', !written.includes(otp) && !written.includes(SMTP_PASS))
+  check('no OTP or SMTP password in the app’s saved files', !written.includes(otp) && !written.includes(SMTP_PASS) && !written.includes('team-test-pass-5678'))
   const logs = JSON.stringify(await page.evaluate(() => window.relay.logs.list({ limit: 2000 })))
   check('the app’s logs were read and record the request', logs.includes('OTP emailed to the administrator') && logs.includes('OTP accepted'))
   check('no OTP or SMTP password in the app’s logs', !logs.includes(otp) && !logs.includes(SMTP_PASS))
 } catch (error) {
   check('crashed', false, String(error).split('\n')[0])
 }
-await finish(app)
+
+if (publicExe) {
+  // The public update has no settings of its own: it must use the ones kept on this PC.
+  await Promise.race([app.close(), new Promise((r) => setTimeout(r, 15000))])
+  const later = await electron.launch({ executablePath: publicExe, args: [`--user-data-dir=${join(home, 'user-data')}`], env })
+  try {
+    const page = await later.firstWindow()
+    await page.waitForSelector('h1', { timeout: 30000 })
+    for (const d of '1357') await page.keyboard.type(d, { delay: 80 })
+    await page.waitForSelector('nav', { timeout: 20000 })
+    const status = await page.evaluate(() => window.relay.subscription.status())
+    check('after a public update: still email OTP mode, with no settings on the PC', status.mode === 'email', status.mode)
+    check('after a public update: still active', status.state === 'active' && status.plan === 'monthly')
+    const before = mail.length
+    // One request a minute: wait out the first one.
+    await page.waitForTimeout(61_000)
+    await page.evaluate(() => (window.location.hash = '/settings?section=subscription'))
+    await page.waitForSelector('[data-testid="activation-id"]')
+    await page.getByRole('radio', { name: /6 Months/ }).click()
+    await page.getByRole('button', { name: 'Activate', exact: true }).click()
+    await page.waitForSelector('#activation-code', { timeout: 30000 })
+    check('after a public update: Activate still emails the admin', mail.length === before + 1 && mail.at(-1).to.join() === expectedAdmin)
+  } catch (error) {
+    check('public update step crashed', false, String(error).split('\n')[0])
+  }
+  await finish(later)
+} else await finish(app)
